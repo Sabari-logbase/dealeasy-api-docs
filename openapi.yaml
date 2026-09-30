@@ -7,7 +7,7 @@ info:
     display tiered quantity pricing in headless storefronts and custom apps.
 servers:
   # TODO: replace with the production Dealeasy API host before publishing
-  - url: https://api.dealeasy.app/api/public/v1
+  - url: https://discounts.logbase.io/api/public/v1
     description: Production
 security:
   - DealeasyApiKey: []
