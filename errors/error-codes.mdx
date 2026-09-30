@@ -1,0 +1,134 @@
+---
+title: "Error codes"
+description: "Every error the Dealeasy API returns, what causes it, and how to fix it."
+---
+
+Every error response has the same JSON shape:
+
+```json
+{
+  "code": "INVALID_API_KEY",
+  "message": "The API key is invalid for this store."
+}
+```
+
+<ResponseField name="code" type="string" required>
+  A stable, machine-readable code. Branch your code on this field.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  A human-readable explanation for logs and debugging. Don't parse it, because the wording can change.
+</ResponseField>
+
+## Summary
+
+| Code | HTTP | Retry? |
+| --- | --- | --- |
+| [`INVALID_REQUEST`](#invalid_request) | 400 | No. Fix the request. |
+| [`MISSING_AUTHORIZATION_HEADER`](#missing_authorization_header) | 401 | No. Add the header. |
+| [`INVALID_API_KEY`](#invalid_api_key) | 401 | No. Fix the key or the domain. |
+| [`UNAUTHORIZED`](#unauthorized) | 401 | No. The merchant must fix the integration. |
+| [`FORBIDDEN`](#forbidden) | 403 | No. The integration needs the scope. |
+| [`TOO_MANY_REQUESTS`](#too_many_requests) | 429 | Yes, with backoff. |
+| [`INTERNAL_SERVER_ERROR`](#internal_server_error) | 500 | Yes, with backoff. |
+
+## INVALID_REQUEST
+
+**HTTP 400.** A header or query parameter is malformed, or it refers to something that doesn't exist in the store. Common causes:
+
+- `productId` is missing, or is neither a numeric ID nor a `gid://shopify/Product/<id>` GID.
+- `variantId` isn't a numeric ID or a `gid://shopify/ProductVariant/<id>` GID, or it belongs to a different product.
+- The product doesn't exist in the store.
+- `country` isn't a two-letter ISO code, or `locale` isn't a BCP 47 tag.
+- A parameter is sent more than once.
+- `x-shopify-domain` isn't a `*.myshopify.com` domain.
+- The path isn't a supported endpoint.
+
+```json
+{ "code": "INVALID_REQUEST", "message": "variantId does not belong to productId." }
+```
+
+**Fix:** read `message`, correct the parameter, and make sure the IDs come from the same store as `x-shopify-domain`.
+
+## MISSING_AUTHORIZATION_HEADER
+
+**HTTP 401.** `x-dealeasy-api-key`, `x-shopify-domain`, or both are missing or empty.
+
+```json
+{ "code": "MISSING_AUTHORIZATION_HEADER", "message": "Missing required header(s): x-dealeasy-api-key." }
+```
+
+**Fix:** send both headers on every request. Check that a proxy or framework isn't stripping custom headers, and that the environment variable holding the key is set in this environment.
+
+## INVALID_API_KEY
+
+**HTTP 401.** The API key is malformed or unknown, or it doesn't belong to the store in `x-shopify-domain`. All of these return the same error on purpose.
+
+```json
+{ "code": "INVALID_API_KEY", "message": "The API key is invalid for this store." }
+```
+
+**Fix:**
+- Send the full key in the format `dealeasy_<integrationId>_<secret>`, with no `Bearer` prefix, quotes, or whitespace.
+- Send the store's `myshopify.com` domain, not its custom domain, and make sure it is the store that created the integration.
+- If the key may have been copied wrong, copy it again from the integration in Dealeasy. See [Create an integration](/getting-started/create-an-integration).
+
+## UNAUTHORIZED
+
+**HTTP 401.** The key is valid, but it can't be used: the integration has been deactivated or revoked, or Dealeasy is no longer installed on the store.
+
+```json
+{ "code": "UNAUTHORIZED", "message": "This integration is inactive or has been revoked." }
+```
+
+**Fix:** ask the merchant to check the integration's status in Dealeasy. A revoked key can't be reactivated. Use a key from a new integration.
+
+## FORBIDDEN
+
+**HTTP 403.** The integration is valid but doesn't have the scope this endpoint needs.
+
+```json
+{ "code": "FORBIDDEN", "message": "This integration does not have the read_volume_discounts scope." }
+```
+
+**Fix:** the merchant must create an integration that includes the scope named in `message`. For volume discounts, that is `read_volume_discounts`.
+
+## TOO_MANY_REQUESTS
+
+**HTTP 429.** Too many requests for this store from your IP in a short period.
+
+```json
+{ "code": "TOO_MANY_REQUESTS", "message": "Too many requests. Please retry after a short delay." }
+```
+
+**Fix:** retry with exponential backoff, and cache responses on your server so you call the API less often. The `RateLimit-*` response headers show your remaining quota.
+
+## INTERNAL_SERVER_ERROR
+
+**HTTP 500.** Something went wrong on the Dealeasy side, for example a temporary problem reaching Shopify.
+
+```json
+{ "code": "INTERNAL_SERVER_ERROR", "message": "An unexpected error occurred. Please try again later." }
+```
+
+**Fix:** retry with exponential backoff. While it fails, show the product without volume discount messaging instead of failing the page. If it keeps happening, contact Dealeasy support with the time of the request and the store domain. Never include your API key.
+
+## Handling errors
+
+```javascript
+async function fetchVolumeDiscounts(url, headers, attempt = 0) {
+  const response = await fetch(url, { headers });
+  const body = await response.json();
+  if (response.ok) return body;
+
+  const retryable = body.code === "TOO_MANY_REQUESTS" || body.code === "INTERNAL_SERVER_ERROR";
+  if (retryable && attempt < 3) {
+    await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500));
+    return fetchVolumeDiscounts(url, headers, attempt + 1);
+  }
+
+  // Degrade gracefully: render the product without volume discounts.
+  console.error(`Dealeasy API ${response.status} ${body.code}: ${body.message}`);
+  return { eligible: false, volumeDiscounts: [] };
+}
+```

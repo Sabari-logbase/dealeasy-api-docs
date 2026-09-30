@@ -1,0 +1,64 @@
+---
+title: "Authentication"
+description: "Authenticate requests with your integration API key and the store domain."
+---
+
+Every request must include two headers:
+
+<ParamField header="x-dealeasy-api-key" type="string" required>
+  The full integration API key, `dealeasy_<integrationId>_<secret>`. Send it as-is, with no `Bearer` prefix.
+</ParamField>
+
+<ParamField header="x-shopify-domain" type="string" required>
+  The `myshopify.com` domain of the store the integration belongs to, for example `your-store.myshopify.com`. Don't use the store's custom domain. Matching is case-insensitive.
+</ParamField>
+
+<CodeGroup>
+
+```bash cURL
+curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
+  --data-urlencode "productId=8012345678901" \
+  -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
+  -H "x-shopify-domain: your-store.myshopify.com"
+```
+
+```javascript JavaScript (Node 18+)
+const response = await fetch(
+  "https://api.dealeasy.app/api/public/v1/volume-discounts?productId=8012345678901",
+  {
+    headers: {
+      "x-dealeasy-api-key": process.env.DEALEASY_API_KEY,
+      "x-shopify-domain": "your-store.myshopify.com",
+    },
+  },
+);
+```
+
+</CodeGroup>
+
+## How requests are checked
+
+A request is accepted only if all of these are true:
+
+1. Both headers are present.
+2. The API key is valid and belongs to the store in `x-shopify-domain`.
+3. The integration is active and has not been revoked.
+4. The integration has the scope the endpoint requires. For volume discounts, that is `read_volume_discounts`.
+
+| Failure | Code | HTTP |
+| --- | --- | --- |
+| A header is missing | `MISSING_AUTHORIZATION_HEADER` | 401 |
+| `x-shopify-domain` is not a `myshopify.com` domain | `INVALID_REQUEST` | 400 |
+| Wrong, malformed, or unknown key, or a key for a different store | `INVALID_API_KEY` | 401 |
+| Integration is inactive or revoked, or Dealeasy is uninstalled | `UNAUTHORIZED` | 401 |
+| Missing scope | `FORBIDDEN` | 403 |
+
+<Note>
+  A wrong key and a wrong store domain return exactly the same `INVALID_API_KEY` error. If you get it, check both headers.
+</Note>
+
+## Rate limits
+
+Requests are rate limited per store and client IP. If you go over the limit, you get HTTP `429` with code [`TOO_MANY_REQUESTS`](/errors/error-codes#too_many_requests). Wait briefly and retry with exponential backoff. The standard `RateLimit-*` response headers show your remaining quota.
+
+Discount settings change rarely, so cache responses on your server for a short time. For example, cache per product for 1 to 5 minutes rather than calling the API on every page view.

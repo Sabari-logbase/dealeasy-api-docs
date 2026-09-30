@@ -1,0 +1,235 @@
+---
+title: "Shopify headless"
+description: "Show Dealeasy volume discounts in a Hydrogen or Next.js storefront."
+---
+
+In a headless storefront, the Dealeasy theme widgets aren't available, so you render volume discounts yourself. Shopify still applies them at checkout.
+
+## Prerequisites
+
+- An integration of type `SHOPIFY_HEADLESS` with the `read_volume_discounts` scope. See [Create an integration](/getting-started/create-an-integration).
+- These server-side environment variables:
+
+```bash .env
+DEALEASY_API_KEY=dealeasy_xxxxxxxx_xxxxxxxxxxxxxxxx
+DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
+```
+
+## Steps
+
+<Steps>
+  <Step title="Create a server-side client">
+    One function that calls the API and falls back to "no discounts" on error, so a Dealeasy outage never breaks your product page.
+  </Step>
+  <Step title="Call it when the product page loads">
+    Pass the Storefront API product ID and the selected variant ID. Both are GIDs, so you can send them as-is.
+  </Step>
+  <Step title="Render the tiers">
+    Show each tier's quantity and discount, with badges from `highlight`. Preselect the tier where `isDefault` is `true`.
+  </Step>
+  <Step title="Let checkout apply it">
+    Automatic discounts apply at checkout by themselves. For code discounts, add `discountCode` to the cart.
+  </Step>
+</Steps>
+
+## Server-side examples
+
+<Tabs>
+  <Tab title="Hydrogen">
+    ```ts app/lib/dealeasy.server.ts
+    const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
+
+    export type VolumeDiscountResponse = {
+      eligible: boolean;
+      volumeDiscounts: Array<{
+        discountId: string;
+        title: string;
+        method: "AUTOMATIC_DISCOUNT" | "CODE_DISCOUNT";
+        discountCode: string | null;
+        discountType: "PERCENTAGE" | "FIXED_AMOUNT";
+        fixedQuantityDiscount: boolean;
+        applicationStrategy: "INDIVIDUAL_PRODUCTS" | "ALL_PRODUCTS" | "INDIVIDUAL_VARIANT";
+        currencyCode: string | null;
+        discountTiers: Array<{
+          id: string;
+          quantity: number;
+          value: number;
+          highlight: "NONE" | "MOST_POPULAR" | "BEST_SAVINGS";
+          isDefault: boolean;
+        }>;
+      }>;
+    };
+
+    const NONE: VolumeDiscountResponse = { eligible: false, volumeDiscounts: [] };
+
+    export async function getVolumeDiscounts(
+      env: { DEALEASY_API_KEY: string; DEALEASY_SHOP_DOMAIN: string },
+      input: { productId: string; variantId?: string; country?: string; locale?: string },
+    ): Promise<VolumeDiscountResponse> {
+      const params = new URLSearchParams({ productId: input.productId });
+      if (input.variantId) params.set("variantId", input.variantId);
+      if (input.country) params.set("country", input.country);
+      if (input.locale) params.set("locale", input.locale);
+
+      try {
+        const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
+          headers: {
+            "x-dealeasy-api-key": env.DEALEASY_API_KEY,
+            "x-shopify-domain": env.DEALEASY_SHOP_DOMAIN,
+          },
+          signal: AbortSignal.timeout(3000),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          console.error(`Dealeasy ${response.status} ${body.code}: ${body.message}`);
+          return NONE;
+        }
+        return body;
+      } catch (error) {
+        console.error("Dealeasy request failed", error);
+        return NONE;
+      }
+    }
+    ```
+
+    ```tsx app/routes/products.$handle.tsx
+    import { useLoaderData } from "react-router";
+    import type { Route } from "./+types/products.$handle";
+    import { getVolumeDiscounts } from "~/lib/dealeasy.server";
+
+    export async function loader({ params, context }: Route.LoaderArgs) {
+      const { storefront, env } = context;
+      const { product } = await storefront.query(PRODUCT_QUERY, {
+        variables: { handle: params.handle! },
+      });
+      if (!product) throw new Response(null, { status: 404 });
+
+      // Runs on the server, so the API key never reaches the browser.
+      const volumeDiscounts = await getVolumeDiscounts(env, {
+        productId: product.id,
+        variantId: product.selectedOrFirstAvailableVariant?.id,
+        country: storefront.i18n.country,
+        locale: storefront.i18n.language.toLowerCase(),
+      });
+
+      return { product, volumeDiscounts };
+    }
+
+    export default function Product() {
+      const { product, volumeDiscounts } = useLoaderData<typeof loader>();
+      const discount = volumeDiscounts.volumeDiscounts[0]; // best discount first
+
+      return (
+        <div>
+          <h1>{product.title}</h1>
+          {discount && (
+            <ul>
+              {discount.discountTiers.map((tier) => (
+                <li key={tier.id} data-default={tier.isDefault}>
+                  Buy {tier.quantity}
+                  {discount.fixedQuantityDiscount ? "" : "+"}, save{" "}
+                  {discount.discountType === "PERCENTAGE"
+                    ? `${tier.value}%`
+                    : `${tier.value} ${discount.currencyCode}`}{" "}
+                  each
+                  {tier.highlight === "MOST_POPULAR" && <strong> Most popular</strong>}
+                  {tier.highlight === "BEST_SAVINGS" && <strong> Best savings</strong>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      );
+    }
+
+    const PRODUCT_QUERY = `#graphql
+      query Product($handle: String!, $country: CountryCode, $language: LanguageCode)
+      @inContext(country: $country, language: $language) {
+        product(handle: $handle) {
+          id
+          title
+          selectedOrFirstAvailableVariant { id }
+        }
+      }
+    `;
+    ```
+
+    Add `DEALEASY_API_KEY` and `DEALEASY_SHOP_DOMAIN` to your Oxygen environment variables, and to the `Env` type in `env.d.ts`.
+  </Tab>
+  <Tab title="Next.js (App Router)">
+    ```ts lib/dealeasy.ts
+    import "server-only"; // fails the build if this is imported into client code
+
+    const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
+
+    export async function getVolumeDiscounts(productId: string, variantId?: string) {
+      const params = new URLSearchParams({ productId });
+      if (variantId) params.set("variantId", variantId);
+
+      try {
+        const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
+          headers: {
+            "x-dealeasy-api-key": process.env.DEALEASY_API_KEY!,
+            "x-shopify-domain": process.env.DEALEASY_SHOP_DOMAIN!,
+          },
+          next: { revalidate: 300 }, // cache for 5 minutes per product
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(`${body.code}: ${body.message}`);
+        return body as { eligible: boolean; volumeDiscounts: any[] };
+      } catch (error) {
+        console.error("Dealeasy request failed", error);
+        return { eligible: false, volumeDiscounts: [] };
+      }
+    }
+    ```
+
+    ```tsx app/products/[handle]/page.tsx
+    import { getVolumeDiscounts } from "@/lib/dealeasy";
+    import { getProduct } from "@/lib/shopify"; // your Storefront API helper
+
+    export default async function ProductPage({ params }: { params: Promise<{ handle: string }> }) {
+      const { handle } = await params;
+      const product = await getProduct(handle);
+      const { volumeDiscounts } = await getVolumeDiscounts(product.id, product.variants[0]?.id);
+
+      return <VolumeDiscountTiers discount={volumeDiscounts[0]} />;
+    }
+    ```
+
+    If a **client** component needs to refetch when the buyer picks another variant, add a route handler that proxies the call. Let the client send only `productId` and `variantId`. The shop domain and key stay on the server:
+
+    ```ts app/api/volume-discounts/route.ts
+    import { getVolumeDiscounts } from "@/lib/dealeasy";
+
+    export async function GET(request: Request) {
+      const { searchParams } = new URL(request.url);
+      const productId = searchParams.get("productId");
+      if (!productId) return Response.json({ error: "productId is required" }, { status: 400 });
+
+      return Response.json(await getVolumeDiscounts(productId, searchParams.get("variantId") ?? undefined));
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Apply code discounts
+
+When `method` is `CODE_DISCOUNT`, the discount only applies once the code is on the cart. You can add it with the Storefront API:
+
+```graphql
+mutation ApplyDiscount($cartId: ID!, $codes: [String!]!) {
+  cartDiscountCodesUpdate(cartId: $cartId, discountCodes: $codes) {
+    cart { id discountCodes { code applicable } }
+    userErrors { field message }
+  }
+}
+```
+
+Pass `discountCode` in `codes`. `applicable` becomes `true` once the cart quantity reaches a tier.
+
+## Tips
+
+- **Refetch on variant change** if the store uses variant-targeted discounts, or fetch for every variant up front.
+- **Cache per product** on your server for a few minutes.
+- **Currency:** tier `value` for `FIXED_AMOUNT` is in the store currency. Convert it the same way you convert product prices when you show other currencies.

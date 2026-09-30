@@ -1,0 +1,78 @@
+---
+title: "Overview"
+description: "Use the Dealeasy API to show a merchant's volume discounts in your own storefront or app."
+---
+
+The Dealeasy API gives you read-only access to the **volume discounts** (tiered quantity discounts) a merchant has set up in the Dealeasy Shopify app. For any product, you can get the discount tiers that apply and show them in your own UI. For example, "Buy 3, save 10%".
+
+Shopify still applies the discounts at checkout. The API tells you what to display. It doesn't change prices or carts.
+
+## Who should use this API
+
+<CardGroup cols={2}>
+  <Card title="Headless storefronts" icon="window" href="/guides/shopify-headless">
+    Hydrogen, Next.js, or any custom frontend that can't use the Dealeasy theme widgets.
+  </Card>
+  <Card title="Custom Shopify apps" icon="puzzle-piece" href="/guides/shopify-custom-app">
+    Backends and custom apps that need a store's volume discount data.
+  </Card>
+</CardGroup>
+
+If the merchant uses a standard Online Store theme, the Dealeasy theme widgets already show volume discounts, so you don't need this API.
+
+## How it works
+
+<Steps>
+  <Step title="The merchant creates an integration">
+    In the Dealeasy admin, the merchant creates an integration and gets an API key. See [Create an integration](/getting-started/create-an-integration).
+  </Step>
+  <Step title="Your server calls the API">
+    Send the API key and the store's `myshopify.com` domain as headers. See [Authentication](/getting-started/authentication).
+  </Step>
+  <Step title="You render the tiers">
+    Request [volume discounts](/volume-discounts/get-volume-discounts) for a product and render the returned tiers.
+  </Step>
+</Steps>
+
+## Quick example
+
+```bash
+curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
+  --data-urlencode "productId=gid://shopify/Product/8012345678901" \
+  -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
+  -H "x-shopify-domain: your-store.myshopify.com"
+```
+
+```json
+{
+  "eligible": true,
+  "volumeDiscounts": [
+    {
+      "discountId": "gid://shopify/DiscountAutomaticNode/1234567890",
+      "title": "Buy more, save more",
+      "method": "AUTOMATIC_DISCOUNT",
+      "discountCode": null,
+      "discountType": "PERCENTAGE",
+      "fixedQuantityDiscount": false,
+      "applicationStrategy": "INDIVIDUAL_PRODUCTS",
+      "currencyCode": "USD",
+      "discountTiers": [
+        { "id": "tier-1", "quantity": 2, "value": 5, "highlight": "NONE", "isDefault": false },
+        { "id": "tier-2", "quantity": 3, "value": 10, "highlight": "MOST_POPULAR", "isDefault": true }
+      ]
+    }
+  ]
+}
+```
+
+<Warning>
+  The API key gives access to the merchant's discount data. Only use it on a server. Never put it in browser JavaScript, mobile apps, or public repositories.
+</Warning>
+
+## Base URL
+
+```
+https://api.dealeasy.app/api/public/v1
+```
+
+All requests use HTTPS, and every response is JSON.

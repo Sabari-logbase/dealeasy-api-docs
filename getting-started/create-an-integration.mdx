@@ -1,0 +1,77 @@
+---
+title: "Create an integration"
+description: "How a merchant creates an integration and API key in the Dealeasy admin."
+---
+
+An **integration** connects one store to one external system, such as a headless storefront or a custom app. Each integration has its own API key. That means a merchant can revoke one system's access without affecting the others.
+
+Only the merchant, or a staff member with access to Dealeasy, can create an integration. If you are a developer working for a merchant, ask them to follow these steps and send you the key over a secure channel.
+
+## Create the integration
+
+<Steps>
+  <Step title="Open Integrations in Dealeasy">
+    In the Shopify admin, open the **Dealeasy** app and go to **Integrations**.
+  </Step>
+  <Step title="Choose the integration type">
+    | Type | Use it for |
+    | --- | --- |
+    | `SHOPIFY_HEADLESS` | A headless storefront, such as Hydrogen or Next.js. |
+    | `SHOPIFY_CUSTOM_APP` | A custom Shopify app or backend service. |
+
+    The type labels the integration. It doesn't change how the API behaves.
+  </Step>
+  <Step title="Name it">
+    Give it a name that identifies the system using it, such as `Hydrogen storefront (production)`.
+  </Step>
+  <Step title="Select scopes">
+    Scopes control which endpoints the key can call. Select `read_volume_discounts`.
+
+    | Scope | Grants access to |
+    | --- | --- |
+    | `read_volume_discounts` | [`GET /volume-discounts`](/volume-discounts/get-volume-discounts) |
+
+    A request to an endpoint without its scope returns [`FORBIDDEN`](/errors/error-codes#forbidden).
+  </Step>
+  <Step title="Copy the API key">
+    Copy the API key from the integration in Dealeasy. It stays available there, so you can copy it again at any time. Store it in a secrets manager or a server environment variable.
+  </Step>
+</Steps>
+
+## API key format
+
+```
+dealeasy_<integrationId>_<secret>
+```
+
+| Part | Description |
+| --- | --- |
+| `dealeasy` | Fixed prefix. It makes keys easy to spot in secret scanners. |
+| `integrationId` | Identifies the integration. |
+| `secret` | The secret part of the key. |
+
+Always send the **whole** key. Don't split it or change it.
+
+## Store the key securely
+
+- Keep it in a server-side environment variable or a secrets manager, for example `DEALEASY_API_KEY`.
+- Never ship it to a browser, a mobile app, or a theme, and never commit it to source control.
+- Use a separate integration for each environment (production, staging) and each system.
+
+## Rotate or revoke a key
+
+Keys don't expire. To rotate a key, with no downtime:
+
+<Steps>
+  <Step title="Create a new integration">
+    Use the same type and scopes, and copy the new key.
+  </Step>
+  <Step title="Deploy the new key">
+    Update your server's environment variable or secret and deploy.
+  </Step>
+  <Step title="Revoke the old integration">
+    In Dealeasy, deactivate or revoke the old integration.
+  </Step>
+</Steps>
+
+Once an integration is inactive or revoked, its key gets [`UNAUTHORIZED`](/errors/error-codes#unauthorized) responses. If you think a key has leaked, revoke it right away and create a new one.

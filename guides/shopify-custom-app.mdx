@@ -1,0 +1,125 @@
+---
+title: "Shopify custom app"
+description: "Read Dealeasy volume discounts from a custom Shopify app or backend service."
+---
+
+Use this guide when you have your own Shopify app or backend that needs a store's volume discount data. For example:
+
+- a theme app extension or app proxy that renders its own quantity selector
+- a Checkout UI extension that shows "add 1 more to save 10%"
+- an internal service that syncs discount tiers to a PIM, ERP, or marketplace feed
+
+## Prerequisites
+
+- An integration of type `SHOPIFY_CUSTOM_APP` with the `read_volume_discounts` scope, created by the merchant. See [Create an integration](/getting-started/create-an-integration).
+- The key stored as a server secret. If your app serves several stores, store **one key per store**, keyed by the `myshopify.com` domain.
+
+## Steps
+
+<Steps>
+  <Step title="Store the key per store">
+    Save each store's key as an encrypted secret, keyed by its `myshopify.com` domain.
+  </Step>
+  <Step title="Call Dealeasy from your backend">
+    Send the key and the matching `x-shopify-domain` header.
+  </Step>
+  <Step title="Expose only what your frontend needs">
+    Return the discount data from your own authenticated endpoint. For an app proxy, verify Shopify's proxy signature first.
+  </Step>
+</Steps>
+
+## Server-side example (Node.js + Express)
+
+This backend endpoint is exposed to a storefront through a [Shopify app proxy](https://shopify.dev/docs/apps/build/online-store/app-proxies). It looks up the store's Dealeasy key, calls the API, and caches the result briefly.
+
+```javascript server/volume-discounts.js
+import express from "express";
+
+const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
+const CACHE_TTL_MS = 2 * 60 * 1000;
+const cache = new Map();
+
+// Replace with your own encrypted secret storage.
+async function getDealeasyKey(shop) {
+  return process.env[`DEALEASY_API_KEY_${shop.replace(/\W/g, "_").toUpperCase()}`];
+}
+
+async function getVolumeDiscounts(shop, productId, variantId) {
+  const cacheKey = `${shop}:${productId}:${variantId ?? ""}`;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.body;
+
+  const apiKey = await getDealeasyKey(shop);
+  if (!apiKey) throw new Error(`No Dealeasy integration configured for ${shop}`);
+
+  const params = new URLSearchParams({ productId });
+  if (variantId) params.set("variantId", variantId);
+
+  const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
+    headers: { "x-dealeasy-api-key": apiKey, "x-shopify-domain": shop },
+    signal: AbortSignal.timeout(5000),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    const error = new Error(body.message);
+    error.code = body.code;
+    error.status = response.status;
+    throw error;
+  }
+
+  cache.set(cacheKey, { body, expiresAt: Date.now() + CACHE_TTL_MS });
+  return body;
+}
+
+const router = express.Router();
+
+// GET /apps/your-proxy/volume-discounts?productId=...&variantId=...
+// verifyAppProxySignature is your middleware that checks Shopify's app proxy HMAC.
+router.get("/volume-discounts", verifyAppProxySignature, async (req, res) => {
+  const shop = req.query.shop; // set by Shopify on app proxy requests
+  const { productId, variantId } = req.query;
+  if (!productId) return res.status(400).json({ error: "productId is required" });
+
+  try {
+    res.json(await getVolumeDiscounts(shop, productId, variantId));
+  } catch (error) {
+    console.error(`Dealeasy ${error.status ?? ""} ${error.code ?? error.message}`); // never log the key
+    res.json({ eligible: false, volumeDiscounts: [] }); // degrade gracefully
+  }
+});
+
+export default router;
+```
+
+## Test with cURL
+
+Before wiring it into your app, check the key and domain from your terminal:
+
+```bash
+curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
+  --data-urlencode "productId=8012345678901" \
+  -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
+  -H "x-shopify-domain: your-store.myshopify.com"
+```
+
+A `200` response with `eligible: false` means the key works but no volume discount applies to that product. See [which discounts are returned](/volume-discounts/overview#which-discounts-are-returned).
+
+## Using the data
+
+- **Next-tier nudges:** compare the cart quantity with `discountTiers` to show "Add 2 more to save 15%". Use `applicationStrategy` to decide whether to count per product, across all products, or per cart line.
+- **Syncing to other systems:** store `discountId`, not the tier `id`, as your stable reference. Tier IDs are positional.
+- **Code discounts:** when `method` is `CODE_DISCOUNT`, show or apply `discountCode`. Automatic discounts need no action.
+
+## Operational checklist
+
+<AccordionGroup>
+  <Accordion title="Key rotation">
+    Create a new integration, deploy the new key, then revoke the old integration. See [Rotate or revoke a key](/getting-started/create-an-integration#rotate-or-revoke-a-key).
+  </Accordion>
+  <Accordion title="Merchant uninstalls Dealeasy or revokes the key">
+    Requests return `UNAUTHORIZED`. Stop showing volume discount messaging for that store and alert whoever manages the integration.
+  </Accordion>
+  <Accordion title="Rate limits">
+    Cache responses and retry `TOO_MANY_REQUESTS` with exponential backoff. Don't call the API in a tight loop for every product. Fetch on demand and cache instead.
+  </Accordion>
+</AccordionGroup>
