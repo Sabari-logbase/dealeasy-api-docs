@@ -8,8 +8,8 @@ openapi: "GET /volume-discounts"
 
 | Parameter | Required | Format | Notes |
 | --- | --- | --- | --- |
-| `productId` | Yes | Numeric ID (`8012345678901`) or GID (`gid://shopify/Product/8012345678901`) | An unknown product returns `INVALID_REQUEST`. |
-| `variantId` | No | Numeric ID or GID (`gid://shopify/ProductVariant/<id>`) | Must belong to `productId`. Needed to match variant-targeted discounts. |
+| `productId` | Yes | Numeric ID (`8012345678901`) | An unknown product returns `INVALID_REQUEST`. |
+| `variantId` | No | Numeric ID | Must belong to `productId`. Needed to match variant-targeted discounts. |
 | `country` | No | ISO 3166-1 alpha-2, such as `US` or `de` | Validated only. It doesn't change the result today. |
 | `locale` | No | BCP 47, such as `en` or `fr-CA` | Validated only. It doesn't change the result today. |
 
@@ -25,10 +25,10 @@ Send each parameter at most once, and URL-encode GIDs. Unknown parameters are ig
 
 ```bash cURL
 curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
-  --data-urlencode "productId=gid://shopify/Product/8012345678901" \
-  --data-urlencode "variantId=gid://shopify/ProductVariant/44012345678901" \
+  --data-urlencode "productId=8012345678901" \
+  --data-urlencode "variantId=44012345678901" \
   --data-urlencode "country=US" \
-  --data-urlencode "locale=en-US" \
+  --data-urlencode "locale=en" \
   -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
   -H "x-shopify-domain: your-store.myshopify.com"
 ```
@@ -36,10 +36,10 @@ curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
 ```javascript JavaScript (fetch)
 // Server-side only: never expose DEALEASY_API_KEY to the browser.
 const params = new URLSearchParams({
-  productId: "gid://shopify/Product/8012345678901",
-  variantId: "gid://shopify/ProductVariant/44012345678901",
+  productId: "8012345678901",
+  variantId: "44012345678901",
   country: "US",
-  locale: "en-US",
+  locale: "en",
 });
 
 const response = await fetch(
