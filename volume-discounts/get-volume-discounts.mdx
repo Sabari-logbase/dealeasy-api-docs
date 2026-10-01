@@ -13,11 +13,7 @@ openapi: "GET /volume-discounts"
 | `country` | No | ISO 3166-1 alpha-2, such as `US` or `de` | Validated only. It doesn't change the result today. |
 | `locale` | No | BCP 47, such as `en` or `fr-CA` | Validated only. It doesn't change the result today. |
 
-Send each parameter at most once, and URL-encode GIDs. Unknown parameters are ignored.
-
-<Tip>
-  You can send `country` and `locale` now. Your integration will keep working if they start affecting results in a future version.
-</Tip>
+Send each parameter at most once, and URL-encode IDs. Unknown parameters are ignored.
 
 ## Examples
 
