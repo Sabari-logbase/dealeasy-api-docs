@@ -22,7 +22,7 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
     One function that calls the API and falls back to "no discounts" on error, so a Dealeasy outage never breaks your product page.
   </Step>
   <Step title="Call it when the product page loads">
-    Pass the Storefront API product ID and the selected variant ID. Both are GIDs, so you can send them as-is.
+    Pass the numeric product ID and selected variant ID, plus the buyer's country and locale. The Storefront API returns GIDs, so convert them to numeric IDs first. See [Country and locale](#country-and-locale).
   </Step>
   <Step title="Render the tiers">
     Show each tier's quantity and discount, with badges from `highlight`. Preselect the tier where `isDefault` is `true`.
@@ -62,6 +62,15 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
 
     const NONE: VolumeDiscountResponse = { eligible: false, volumeDiscounts: [] };
 
+    // "gid://shopify/Product/8012345678901" -> "8012345678901"
+    export const toNumericId = (gid: string) => gid.split("/").pop()!;
+
+    // Hydrogen language "EN" -> "en", "PT_BR" -> "pt-BR" (same format as Shopify.locale)
+    export const toShopifyLocale = (language: string) => {
+      const [lang, region] = language.split("_");
+      return region ? `${lang.toLowerCase()}-${region.toUpperCase()}` : lang.toLowerCase();
+    };
+
     export async function getVolumeDiscounts(
       env: { DEALEASY_API_KEY: string; DEALEASY_SHOP_DOMAIN: string },
       input: { productId: string; variantId?: string; country?: string; locale?: string },
@@ -95,7 +104,7 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
     ```tsx app/routes/products.$handle.tsx
     import { useLoaderData } from "react-router";
     import type { Route } from "./+types/products.$handle";
-    import { getVolumeDiscounts } from "~/lib/dealeasy.server";
+    import { getVolumeDiscounts, toNumericId, toShopifyLocale } from "~/lib/dealeasy.server";
 
     export async function loader({ params, context }: Route.LoaderArgs) {
       const { storefront, env } = context;
@@ -104,12 +113,12 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
       });
       if (!product) throw new Response(null, { status: 404 });
 
-      // Runs on the server, so the API key never reaches the browser.
+      const variant = product.selectedOrFirstAvailableVariant;
       const volumeDiscounts = await getVolumeDiscounts(env, {
-        productId: product.id,
-        variantId: product.selectedOrFirstAvailableVariant?.id,
-        country: storefront.i18n.country,
-        locale: storefront.i18n.language.toLowerCase(),
+        productId: toNumericId(product.id),
+        variantId: variant ? toNumericId(variant.id) : undefined,
+        country: storefront.i18n.country, // e.g. "US", same as Shopify.country
+        locale: toShopifyLocale(storefront.i18n.language), // e.g. "en", same as Shopify.locale
       });
 
       return { product, volumeDiscounts };
@@ -162,9 +171,18 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
 
     const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
 
-    export async function getVolumeDiscounts(productId: string, variantId?: string) {
-      const params = new URLSearchParams({ productId });
-      if (variantId) params.set("variantId", variantId);
+    // Accepts Storefront API GIDs or numeric IDs and always sends numeric IDs
+    const toNumericId = (id: string) => id.split("/").pop()!;
+
+    export async function getVolumeDiscounts(
+      productId: string,
+      variantId?: string,
+      context?: { country?: string; locale?: string }, // e.g. { country: "US", locale: "en" }
+    ) {
+      const params = new URLSearchParams({ productId: toNumericId(productId) });
+      if (variantId) params.set("variantId", toNumericId(variantId));
+      if (context?.country) params.set("country", context.country);
+      if (context?.locale) params.set("locale", context.locale);
 
       try {
         const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
@@ -191,7 +209,10 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
     export default async function ProductPage({ params }: { params: Promise<{ handle: string }> }) {
       const { handle } = await params;
       const product = await getProduct(handle);
-      const { volumeDiscounts } = await getVolumeDiscounts(product.id, product.variants[0]?.id);
+      const { volumeDiscounts } = await getVolumeDiscounts(product.id, product.variants[0]?.id, {
+        country: "US", // the buyer's market, e.g. from your i18n routing
+        locale: "en",
+      });
 
       return <VolumeDiscountTiers discount={volumeDiscounts[0]} />;
     }
@@ -212,6 +233,17 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
     ```
   </Tab>
 </Tabs>
+
+## Country and locale
+
+On the Online Store, `country` and `locale` come from `Shopify.country` and `Shopify.locale`. Headless storefronts don't have those globals, so send the same values from your own localization:
+
+| Parameter | Online Store | Hydrogen | Storefront API `localization` |
+| --- | --- | --- | --- |
+| `country` | `Shopify.country` → `US` | `storefront.i18n.country` → `US` | `country.isoCode` → `US` |
+| `locale` | `Shopify.locale` → `en`, `pt-BR` | `storefront.i18n.language` → `EN`, `PT_BR` (convert) | `language.isoCode` → `EN`, `PT_BR` (convert) |
+
+Shopify's GraphQL language codes use upper case and an underscore (`PT_BR`), but `Shopify.locale` uses lower case and a hyphen (`pt-BR`). Convert them with `toShopifyLocale` from the Hydrogen example above.
 
 ## Apply code discounts
 

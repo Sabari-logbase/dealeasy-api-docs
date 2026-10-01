@@ -8,12 +8,31 @@ openapi: "GET /volume-discounts"
 
 | Parameter | Required | Format | Notes |
 | --- | --- | --- | --- |
-| `productId` | Yes | Numeric ID (`8012345678901`) | An unknown product returns `INVALID_REQUEST`. |
-| `variantId` | No | Numeric ID | Must belong to `productId`. Needed to match variant-targeted discounts. |
-| `country` | No | ISO 3166-1 alpha-2, such as `US` or `de` | Validated only. It doesn't change the result today. |
-| `locale` | No | BCP 47, such as `en` or `fr-CA` | Validated only. It doesn't change the result today. |
+| `productId` | Yes | Numeric ID, such as `8012345678901` | An unknown product returns `INVALID_REQUEST`. |
+| `variantId` | No | Numeric ID, such as `44012345678901` | Must belong to `productId`. Needed to match variant-targeted discounts. |
+| `country` | No | Two-letter country code, such as `US` | The value of `Shopify.country`. |
+| `locale` | No | Language code, such as `en` or `pt-BR` | The value of `Shopify.locale`. |
 
-Send each parameter at most once, and URL-encode IDs. Unknown parameters are ignored.
+Send each parameter at most once. Unknown parameters are ignored.
+
+## Where to get the values
+
+In an Online Store theme, every value is already on the page:
+
+| Parameter | Liquid | JavaScript |
+| --- | --- | --- |
+| `productId` | `{{ product.id }}` | — |
+| `variantId` | `{{ product.selected_or_first_available_variant.id }}` | The `variant` URL parameter, after the buyer picks a variant |
+| `country` | `{{ localization.country.iso_code }}` | `Shopify.country` |
+| `locale` | `{{ request.locale.iso_code }}` | `Shopify.locale` |
+
+The Storefront and Admin GraphQL APIs return IDs as GIDs, such as `gid://shopify/Product/8012345678901`. Send only the number after the last `/`:
+
+```javascript
+const toNumericId = (gid) => gid.split("/").pop(); // "gid://shopify/Product/8012345678901" -> "8012345678901"
+```
+
+For headless storefronts, which don't have `Shopify.country` or `Shopify.locale`, see the [Shopify headless guide](/guides/shopify-headless#country-and-locale).
 
 ## Examples
 

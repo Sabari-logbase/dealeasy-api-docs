@@ -44,16 +44,18 @@ async function getDealeasyKey(shop) {
   return process.env[`DEALEASY_API_KEY_${shop.replace(/\W/g, "_").toUpperCase()}`];
 }
 
-async function getVolumeDiscounts(shop, productId, variantId) {
-  const cacheKey = `${shop}:${productId}:${variantId ?? ""}`;
+async function getVolumeDiscounts(shop, { productId, variantId, country, locale }) {
+  const cacheKey = [shop, productId, variantId, country, locale].join(":");
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.body;
 
   const apiKey = await getDealeasyKey(shop);
   if (!apiKey) throw new Error(`No Dealeasy integration configured for ${shop}`);
 
-  const params = new URLSearchParams({ productId });
+  const params = new URLSearchParams({ productId }); // numeric IDs only
   if (variantId) params.set("variantId", variantId);
+  if (country) params.set("country", country); // Shopify.country, e.g. "US"
+  if (locale) params.set("locale", locale); // Shopify.locale, e.g. "en"
 
   const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
     headers: { "x-dealeasy-api-key": apiKey, "x-shopify-domain": shop },
@@ -73,15 +75,15 @@ async function getVolumeDiscounts(shop, productId, variantId) {
 
 const router = express.Router();
 
-// GET /apps/your-proxy/volume-discounts?productId=...&variantId=...
+// GET /apps/your-proxy/volume-discounts?productId=...&variantId=...&country=...&locale=...
 // verifyAppProxySignature is your middleware that checks Shopify's app proxy HMAC.
 router.get("/volume-discounts", verifyAppProxySignature, async (req, res) => {
   const shop = req.query.shop; // set by Shopify on app proxy requests
-  const { productId, variantId } = req.query;
+  const { productId, variantId, country, locale } = req.query;
   if (!productId) return res.status(400).json({ error: "productId is required" });
 
   try {
-    res.json(await getVolumeDiscounts(shop, productId, variantId));
+    res.json(await getVolumeDiscounts(shop, { productId, variantId, country, locale }));
   } catch (error) {
     console.error(`Dealeasy ${error.status ?? ""} ${error.code ?? error.message}`); // never log the key
     res.json({ eligible: false, volumeDiscounts: [] }); // degrade gracefully
@@ -91,6 +93,31 @@ router.get("/volume-discounts", verifyAppProxySignature, async (req, res) => {
 export default router;
 ```
 
+## Call it from the theme
+
+On a product page, your theme app extension already has every value the API needs. It takes the numeric IDs from Liquid and `country` and `locale` from `Shopify.country` and `Shopify.locale`:
+
+```liquid blocks/volume-discounts.liquid
+<div id="volume-discounts"></div>
+<script>
+  (async () => {
+    const params = new URLSearchParams({
+      productId: "{{ product.id }}",
+      variantId: "{{ product.selected_or_first_available_variant.id }}",
+      country: Shopify.country, // e.g. "US"
+      locale: Shopify.locale,   // e.g. "en"
+    });
+    const response = await fetch(`/apps/your-proxy/volume-discounts?${params}`);
+    const { eligible, volumeDiscounts } = await response.json();
+    if (eligible) {
+      // render volumeDiscounts[0].discountTiers into #volume-discounts
+    }
+  })();
+</script>
+```
+
+If the buyer changes variant, request again with the new numeric variant ID.
+
 ## Test with cURL
 
 Before wiring it into your app, check the key and domain from your terminal:
@@ -98,6 +125,9 @@ Before wiring it into your app, check the key and domain from your terminal:
 ```bash
 curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
   --data-urlencode "productId=8012345678901" \
+  --data-urlencode "variantId=44012345678901" \
+  --data-urlencode "country=US" \
+  --data-urlencode "locale=en" \
   -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
   -H "x-shopify-domain: your-store.myshopify.com"
 ```

@@ -38,7 +38,9 @@ If the merchant uses a standard Online Store theme, the Dealeasy theme widgets a
 
 ```bash
 curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
-  --data-urlencode "productId=gid://shopify/Product/8012345678901" \
+  --data-urlencode "productId=8012345678901" \
+  --data-urlencode "country=US" \
+  --data-urlencode "locale=en" \
   -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
   -H "x-shopify-domain: your-store.myshopify.com"
 ```

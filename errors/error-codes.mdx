@@ -36,10 +36,10 @@ Every error response has the same JSON shape:
 
 **HTTP 400.** A header or query parameter is malformed, or it refers to something that doesn't exist in the store. Common causes:
 
-- `productId` is missing, or is neither a numeric ID nor a `gid://shopify/Product/<id>` GID.
-- `variantId` isn't a numeric ID or a `gid://shopify/ProductVariant/<id>` GID, or it belongs to a different product.
+- `productId` is missing or isn't a numeric ID.
+- `variantId` isn't a numeric ID, or it belongs to a different product.
 - The product doesn't exist in the store.
-- `country` isn't a two-letter ISO code, or `locale` isn't a BCP 47 tag.
+- `country` isn't a two-letter country code like `Shopify.country`, or `locale` isn't a language code like `Shopify.locale`.
 - A parameter is sent more than once.
 - `x-shopify-domain` isn't a `*.myshopify.com` domain.
 - The path isn't a supported endpoint.

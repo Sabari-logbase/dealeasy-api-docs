@@ -30,27 +30,32 @@ paths:
           in: query
           required: true
           description: >-
-            The Shopify product ID, either numeric (`8012345678901`) or as a GID
-            (`gid://shopify/Product/8012345678901`).
+            The numeric Shopify product ID, for example `8012345678901`. In an
+            Online Store theme this is `{{ product.id }}`. If you have a GID
+            (`gid://shopify/Product/8012345678901`), send only the number after
+            the last `/`.
           schema:
             type: string
-            example: gid://shopify/Product/8012345678901
+            pattern: "^[0-9]+$"
+            example: "8012345678901"
         - name: variantId
           in: query
           required: false
           description: >-
-            The Shopify variant ID, numeric or as a GID
-            (`gid://shopify/ProductVariant/<id>`). Must belong to `productId`.
-            Required to match discounts that target specific variants.
+            The numeric Shopify variant ID, for example `44012345678901`. In an
+            Online Store theme this is `{{ product.selected_or_first_available_variant.id }}`.
+            Must belong to `productId`. Required to match discounts that target
+            specific variants.
           schema:
             type: string
-            example: gid://shopify/ProductVariant/44012345678901
+            pattern: "^[0-9]+$"
+            example: "44012345678901"
         - name: country
           in: query
           required: false
           description: >-
-            The buyer's country as an ISO 3166-1 alpha-2 code (case-insensitive).
-            Validated but does not currently change the result.
+            The buyer's country as a two-letter ISO 3166-1 alpha-2 code. In the
+            Online Store this is the value of `Shopify.country`, for example `US`.
           schema:
             type: string
             pattern: "^[A-Za-z]{2}$"
@@ -59,11 +64,11 @@ paths:
           in: query
           required: false
           description: >-
-            The buyer's language as a BCP 47 tag. Validated but does not
-            currently change the result.
+            The buyer's language. In the Online Store this is the value of
+            `Shopify.locale`, for example `en`, `fr` or `pt-BR`.
           schema:
             type: string
-            example: en-US
+            example: en
       responses:
         "200":
           description: >-
