@@ -1,44 +1,143 @@
 ---
 title: "Campaigns overview"
-description: "What campaigns are, which ones the API supports, and which endpoint to use."
+description: "Campaign categories and types, the fields every campaign has, and how campaigns are matched."
 ---
 
 A **campaign** is a discount offer a merchant runs with Dealeasy. Merchants create campaigns in the Dealeasy app, and Shopify applies them at checkout. The API lets you read them so you can show them in your own storefront or app.
 
-## Supported campaigns
+## Campaign categories
 
-Campaigns are grouped by the level they apply at, and each group has its own endpoints under `/campaigns`. Today the API supports **product-level campaigns**, so every endpoint lives under `/campaigns/products`. Groups for other levels will be added later under their own paths (`/campaigns/<group>`), without changing the product endpoints.
+Campaigns are grouped into categories, and each category has its own endpoints under `/campaigns`:
 
-Every campaign has a `type`. Product campaigns currently have one type:
+| Category | Campaign types | Endpoints | Status |
+| --- | --- | --- | --- |
+| **Product-based** | Volume discount, BOGO, Gift with product | `/campaigns/products` | Available |
+| **Cart value-based** | Shipping discount, Free gift on cart value, Order discount on cart value | `/campaigns/<category>` | Upcoming |
+| **Bundles** | Fixed bundle, Dynamic bundle | `/campaigns/<category>` | Upcoming |
 
-| `type` | What it is |
-| --- | --- |
-| `VOLUME_DISCOUNT` | Tiered quantity discounts, for example "Buy 2, save 5%; buy 3, save 10%". |
+New categories get their own paths, so the product endpoints won't change when they're added.
 
-More campaign types will be added over time.
+## Product campaign types
+
+The product endpoints return every supported product campaign type together. Each campaign's `type` tells you which structure it has:
+
+| `type` | Campaign | Example | Status |
+| --- | --- | --- | --- |
+| `VOLUME_DISCOUNT` | [Volume discount](/campaigns/volume-discount) | Buy 2, save 5%; buy 3, save 10% | Available |
+| `BOGO_DISCOUNT` | [BOGO](/campaigns/bogo) | Buy 1, get 1 free | Available |
+| — | [Gift with product](/campaigns/gift-with-product) | Buy a product, get a gift | Upcoming |
 
 <Warning>
   Always check `type`, and skip any campaign whose type your code doesn't support. That way your integration keeps working when new types are added.
 </Warning>
 
-## Which endpoint to use
+## Endpoints
 
 <CardGroup cols={2}>
-  <Card title="List product campaigns" icon="list" href="/campaigns/list-product-campaigns">
+  <Card title="Get all product campaigns" icon="list" href="/campaigns/get-all-product-campaigns">
     `GET /campaigns/products`
 
-    Every active and scheduled campaign, with its full rules. Use it to cache campaigns and match them yourself, or to sync them to another system.
+    Every active and scheduled product campaign, with its full rules. Use it to cache campaigns and match them yourself.
   </Card>
-  <Card title="Get specific product campaigns" icon="filter" href="/campaigns/get-specific-product-campaigns">
+  <Card title="Get campaigns for a specific product" icon="filter" href="/campaigns/get-campaigns-for-a-specific-product">
     `POST /campaigns/products/search`
 
     You send a product and the buyer in the payload, and get back only the **active** campaigns that apply to that product. **Recommended for most integrations.**
   </Card>
 </CardGroup>
 
+## Fields every campaign has
+
+Every campaign, whatever its `type`, has these fields. The type pages describe the rest.
+
+<ResponseField name="id" type="string" required>
+  The Shopify discount GID, such as `gid://shopify/DiscountAutomaticNode/…` or `gid://shopify/DiscountCodeNode/…`. It stays the same for the life of the campaign. Use it as your stable reference.
+</ResponseField>
+
+<ResponseField name="type" type="enum<string>" required>
+  The campaign type: `VOLUME_DISCOUNT` or `BOGO_DISCOUNT`.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  The title set by the merchant. For `CODE` campaigns it usually matches the code.
+</ResponseField>
+
+<ResponseField name="method" type="enum<string>" required>
+  `AUTOMATIC`: Shopify applies it at checkout once the cart qualifies.
+  `CODE`: the buyer must enter `code`, or you apply it to the cart.
+</ResponseField>
+
+<ResponseField name="code" type="string | null" required>
+  The discount code for `CODE` campaigns. Always `null` for `AUTOMATIC`.
+</ResponseField>
+
+<ResponseField name="combinesWith" type="object" required>
+  Which other kinds of Shopify discounts this one can be combined with at checkout.
+
+  <Expandable title="properties">
+    <ResponseField name="productDiscounts" type="boolean" required />
+    <ResponseField name="orderDiscounts" type="boolean" required />
+    <ResponseField name="shippingDiscounts" type="boolean" required />
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="startsAt" type="string" required>
+  When the campaign starts (ISO 8601, UTC).
+</ResponseField>
+
+<ResponseField name="endsAt" type="string | null" required>
+  When the campaign ends (ISO 8601, UTC), or `null` if it has no end date.
+</ResponseField>
+
+### Rule fields (Get all product campaigns only)
+
+[Get all product campaigns](/campaigns/get-all-product-campaigns) also returns each campaign's rules. [Get campaigns for a specific product](/campaigns/get-campaigns-for-a-specific-product) leaves them out, because it has already applied them.
+
+<ResponseField name="trigger" type="object" required>
+  The products the campaign targets.
+
+  <Expandable title="properties">
+    <ResponseField name="type" type="enum<string>" required>
+      `ALL`, `PRODUCTS`, `VARIANTS`, `COLLECTIONS` or `TAGS`. Each campaign type supports a subset; see its type page.
+    </ResponseField>
+    <ResponseField name="items" type="string[]" required>
+      Product, variant or collection GIDs, or product tags for `TAGS`. Empty for `ALL`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="excludes" type="object | null" required>
+  Products the campaign never applies to, even if `trigger` matches. `null` if there are no exclusions.
+
+  <Expandable title="properties">
+    <ResponseField name="type" type="enum<string>" required>
+      `PRODUCTS`, `COLLECTIONS` or `TAGS`.
+    </ResponseField>
+    <ResponseField name="items" type="string[]" required>
+      Product or collection GIDs, or product tags for `TAGS`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="customerEligibility" type="object" required>
+  The customers who can get the campaign. `CODE` campaigns are always `ALL`.
+
+  <Expandable title="properties">
+    <ResponseField name="type" type="enum<string>" required>
+      `ALL` for everyone, `CUSTOMERS` for the listed customers, or `TAGS` for customers with any of the listed tags.
+    </ResponseField>
+    <ResponseField name="items" type="string[]" required>
+      Customer GIDs for `CUSTOMERS`, customer tags for `TAGS`. Empty for `ALL`.
+    </ResponseField>
+    <ResponseField name="b2b" type="boolean" required>
+      `false` if B2B customers are excluded.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
 ## How a campaign is matched
 
-Get specific product campaigns returns a campaign only when **all** of these are true. If you use the list endpoint, apply the same rules yourself:
+Get campaigns for a specific product returns a campaign only when **all** of these are true. If you use Get all product campaigns, apply the same rules yourself:
 
 1. **It is active now.** `startsAt` has passed, and `endsAt` is `null` or still in the future.
 2. **It targets the product** (`trigger`):
@@ -74,9 +173,9 @@ You can send any Shopify ID (product, variant, collection, customer) as a number
 
 | `method` | What the buyer has to do |
 | --- | --- |
-| `AUTOMATIC` | Nothing. Shopify applies it at checkout once the quantity qualifies. |
+| `AUTOMATIC` | Nothing. Shopify applies it at checkout once the cart qualifies. |
 | `CODE` | Enter `code` at checkout, or you add it to the cart for them. For example, use the Storefront API [`cartDiscountCodesUpdate`](https://shopify.dev/docs/api/storefront/latest/mutations/cartDiscountCodesUpdate) mutation. |
 
 ## Out of scope
 
-The API is read-only. It can't create or update campaigns. See the [campaign object](/campaigns/campaign-object) for every field.
+The API is read-only. It can't create or update campaigns.

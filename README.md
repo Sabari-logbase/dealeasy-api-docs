@@ -30,8 +30,8 @@ The first run of any command can take a minute while Mintlify downloads its loca
 ## Testing locally
 
 1. Run `npm run dev` and open http://localhost:3000.
-2. Click through every page in the sidebar. Edits to `.mdx`, `docs.json` and `openapi.yaml` reload automatically.
-3. On **Get specific product campaigns** and **List product campaigns**, use **Try it** to check the playground. Without a live API host, the request will fail; that's expected. Check the form fields, headers and examples instead.
+2. Click through every page in the sidebar. Edits to `.mdx` and `docs.json` reload automatically. **After editing `openapi.yaml`, stop and restart `npm run dev`**: the spec isn't reloaded, and endpoint pages lose their request/response panel and **Try it** bar if they no longer match the running spec.
+3. On **Get all product campaigns** and **Get campaigns for a specific product**, use **Try it** to check the playground. Without a live API host, the request will fail; that's expected. Check the form fields, headers and examples instead.
 4. Stop the server with `Ctrl+C`, then run `npm run check`.
 
 ## Structure
@@ -41,13 +41,16 @@ docs.json                       site config and sidebar navigation
 openapi.yaml                    API spec; drives the endpoint pages and playground
 index.mdx                       Overview
 getting-started/                Create an integration, Authentication
-campaigns/                      Campaigns overview, endpoint pages, campaign object
+campaigns/                      Campaigns overview (categories, types, common fields, matching rules),
+                                product campaign endpoint pages and type pages
+                                (volume discount, BOGO, gift with product)
 errors/error-codes.mdx          Error reference
 guides/                         Shopify headless, Shopify custom app
 favicon.svg
 ```
 
-- To add a page, create the `.mdx` file and add its path, without the extension, to `navigation` in `docs.json`.
+- To add a page, create the `.mdx` file and add its path, without the extension, to `navigation` in `docs.json`. Sidebar sub-groups (like "Product campaigns") are set in `docs.json`, not by folders.
+- Keep pages at most **one folder deep** (for example `campaigns/bogo.mdx`). On Windows, `mint broken-links` wrongly reports links to deeper pages as broken.
 - Endpoint pages use `openapi: "METHOD /path"` frontmatter, so their parameters, schemas and examples come from `openapi.yaml`. Change the spec, not the page, when the API changes.
 
 ## Before publishing

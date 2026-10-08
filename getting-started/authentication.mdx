@@ -60,4 +60,4 @@ A request is accepted only if all of these are true:
 
 Requests are rate limited per store and client IP. If you go over the limit, you get HTTP `429` with code [`TOO_MANY_REQUESTS`](/errors/error-codes#too_many_requests). Wait briefly and retry with exponential backoff. The standard `RateLimit-*` response headers show your remaining quota.
 
-Campaigns change rarely, so cache responses for a short time. For example, cache [List product campaigns](/campaigns/list-product-campaigns) for 1 to 5 minutes and match campaigns yourself, rather than calling the API on every page view.
+Campaigns change rarely, so cache responses for a short time. For example, cache [Get all product campaigns](/campaigns/get-all-product-campaigns) for 1 to 5 minutes and match campaigns yourself, rather than calling the API on every page view.

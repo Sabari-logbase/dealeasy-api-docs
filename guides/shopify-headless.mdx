@@ -21,11 +21,11 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
   <Step title="Fetch the product with its collections and tags">
     Dealeasy matches campaigns using the data you send, so query the product's `tags` and `collections` from the Storefront API along with the selected variant.
   </Step>
-  <Step title="Call Get specific product campaigns">
-    POST the product and the buyer to [`/campaigns/products/search`](/campaigns/get-specific-product-campaigns). Storefront API GIDs can be sent as-is.
+  <Step title="Call Get campaigns for a specific product">
+    POST the product and the buyer to [`/campaigns/products/search`](/campaigns/get-campaigns-for-a-specific-product). Storefront API GIDs can be sent as-is.
   </Step>
-  <Step title="Render the tiers">
-    Use `campaigns[0]`, which is the best one. Show each tier's quantity and discount, and preselect the tier where `isDefault` is `true`.
+  <Step title="Render each campaign by its type">
+    Campaigns come back newest first, with a `type`. Render [volume discounts](/campaigns/volume-discount) as quantity tiers and [BOGO](/campaigns/bogo) as buy X, get Y offers, and skip types you don't support.
   </Step>
   <Step title="Let checkout apply it">
     `AUTOMATIC` campaigns apply at checkout by themselves. For `CODE` campaigns, add `code` to the cart.
@@ -39,24 +39,36 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
     ```ts app/lib/dealeasy.server.ts
     const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
 
-    export type Tier = { id: string; quantity: number; value: number; isDefault: boolean };
-
-    export type Campaign = {
+    type CampaignBase = {
       id: string;
-      type: "VOLUME_DISCOUNT";
       title: string;
       method: "AUTOMATIC" | "CODE";
       code: string | null;
+      combinesWith: { productDiscounts: boolean; orderDiscounts: boolean; shippingDiscounts: boolean };
+      startsAt: string;
+      endsAt: string | null;
+    };
+
+    export type VolumeDiscount = CampaignBase & {
+      type: "VOLUME_DISCOUNT";
       discountType: "PERCENTAGE" | "FIXED_AMOUNT";
       quantityType: "FIXED" | "RANGE";
       quantityScope: "PER_PRODUCT" | "PER_VARIANT" | "ALL_PRODUCTS";
       appliesToSubscriptions: boolean;
-      combinesWith: { productDiscounts: boolean; orderDiscounts: boolean; shippingDiscounts: boolean };
       currencyCode: string;
-      startsAt: string;
-      endsAt: string | null;
-      tiers: Tier[];
+      tiers: { id: string; quantity: number; value: number; isDefault: boolean }[];
     };
+
+    export type Bogo = CampaignBase & {
+      type: "BOGO_DISCOUNT";
+      rewardStrategy: "SAME_PRODUCT" | "ANY_ELIGIBLE";
+      maxUsesPerOrder: number | null;
+      tiers: { id: string; buyQuantity: number; getQuantity: number }[];
+    };
+
+    export type Campaign = VolumeDiscount | Bogo;
+
+    const SUPPORTED_TYPES = ["VOLUME_DISCOUNT", "BOGO_DISCOUNT"];
 
     export type Buyer = { id?: string; isB2b?: boolean; tags?: string[] };
 
@@ -87,7 +99,7 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
           console.error(`Dealeasy ${response.status} ${body.code}: ${body.message}`);
           return [];
         }
-        return body.campaigns.filter((c: Campaign) => c.type === "VOLUME_DISCOUNT");
+        return body.campaigns.filter((c: Campaign) => SUPPORTED_TYPES.includes(c.type)); // skip unknown types
       } catch (error) {
         console.error("Dealeasy request failed", error);
         return [];
@@ -130,25 +142,32 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
 
     export default function Product() {
       const { product, campaigns } = useLoaderData<typeof loader>();
-      const campaign = campaigns[0]; // best campaign first
+      const volumeDiscount = campaigns.find((c) => c.type === "VOLUME_DISCOUNT");
+      const bogo = campaigns.find((c) => c.type === "BOGO_DISCOUNT");
 
       return (
         <div>
           <h1>{product.title}</h1>
-          {campaign && (
+          {volumeDiscount && (
             <ul>
-              {campaign.tiers.map((tier) => (
+              {volumeDiscount.tiers.map((tier) => (
                 <li key={tier.id} data-default={tier.isDefault}>
                   Buy {tier.quantity}
-                  {campaign.quantityType === "RANGE" ? "+" : ""}, save{" "}
-                  {campaign.discountType === "PERCENTAGE"
+                  {volumeDiscount.quantityType === "RANGE" ? "+" : ""}, save{" "}
+                  {volumeDiscount.discountType === "PERCENTAGE"
                     ? `${tier.value}%`
-                    : `${tier.value} ${campaign.currencyCode}`}{" "}
+                    : `${tier.value} ${volumeDiscount.currencyCode}`}{" "}
                   each
                 </li>
               ))}
             </ul>
           )}
+          {bogo &&
+            bogo.tiers.map((tier) => (
+              <p key={tier.id}>
+                Buy {tier.buyQuantity}, get {tier.getQuantity} free
+              </p>
+            ))}
         </div>
       );
     }
@@ -195,7 +214,8 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
         });
         const body = await response.json();
         if (!response.ok) throw new Error(`${body.code}: ${body.message}`);
-        return body.campaigns.filter((c: { type: string }) => c.type === "VOLUME_DISCOUNT");
+        // Keep only the types you render; skip unknown types
+        return body.campaigns.filter((c: { type: string }) => ["VOLUME_DISCOUNT", "BOGO_DISCOUNT"].includes(c.type));
       } catch (error) {
         console.error("Dealeasy request failed", error);
         return [];
@@ -218,7 +238,7 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
         tags: product.tags,
       });
 
-      return <VolumeDiscountTiers campaign={campaigns[0]} />;
+      return <ProductCampaigns campaigns={campaigns} />; // render each campaign by its type
     }
     ```
   </Tab>
@@ -226,7 +246,7 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
 
 ## Caching instead of calling per view
 
-On busy storefronts, you can call [List product campaigns](/campaigns/list-product-campaigns) every few minutes, cache the result, and match campaigns on each product view yourself. See [Matching campaigns yourself](/campaigns/list-product-campaigns#matching-campaigns-yourself).
+On busy storefronts, you can call [Get all product campaigns](/campaigns/get-all-product-campaigns) every few minutes, cache the result, and match campaigns on each product view yourself. See [Matching campaigns yourself](/campaigns/get-all-product-campaigns#matching-campaigns-yourself).
 
 ## Apply code campaigns
 

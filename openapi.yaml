@@ -16,12 +16,12 @@ tags:
 paths:
   /campaigns/products:
     get:
-      operationId: listProductCampaigns
-      summary: List product campaigns
+      operationId: getAllProductCampaigns
+      summary: Get all product campaigns
       description: >-
-        Returns every active and scheduled product campaign in the store, with
-        its full targeting, exclusion and customer rules. Use this when you want
-        to cache campaigns and work out which ones apply yourself.
+        Returns every active and scheduled product campaign in the store, of
+        every supported type, with its full targeting, exclusion and customer
+        rules.
       tags:
         - Product campaigns
       parameters:
@@ -34,7 +34,7 @@ paths:
             product campaign types are returned.
           schema:
             type: string
-            enum: [VOLUME_DISCOUNT]
+            enum: [VOLUME_DISCOUNT, BOGO_DISCOUNT]
       responses:
         "200":
           description: The store's active and scheduled product campaigns.
@@ -44,7 +44,7 @@ paths:
                 $ref: "#/components/schemas/ProductCampaignsResponse"
               examples:
                 campaigns:
-                  summary: Volume discount campaigns
+                  summary: Volume discount and BOGO campaigns
                   value:
                     campaigns:
                       - id: gid://shopify/DiscountAutomaticNode/1234567890
@@ -52,15 +52,10 @@ paths:
                         title: Buy more, save more
                         method: AUTOMATIC
                         code: null
-                        discountType: PERCENTAGE
-                        quantityType: RANGE
-                        quantityScope: PER_PRODUCT
-                        appliesToSubscriptions: false
                         combinesWith:
                           productDiscounts: false
                           orderDiscounts: true
                           shippingDiscounts: true
-                        currencyCode: USD
                         startsAt: "2026-09-01T00:00:00Z"
                         endsAt: null
                         trigger:
@@ -75,6 +70,11 @@ paths:
                           type: ALL
                           items: []
                           b2b: true
+                        discountType: PERCENTAGE
+                        quantityType: RANGE
+                        quantityScope: PER_PRODUCT
+                        appliesToSubscriptions: false
+                        currencyCode: USD
                         tiers:
                           - id: tier-1
                             quantity: 2
@@ -84,35 +84,32 @@ paths:
                             quantity: 3
                             value: 10
                             isDefault: true
-                      - id: gid://shopify/DiscountCodeNode/9876543210
-                        type: VOLUME_DISCOUNT
-                        title: DE-BULK
-                        method: CODE
-                        code: DE-BULK
-                        discountType: FIXED_AMOUNT
-                        quantityType: FIXED
-                        quantityScope: ALL_PRODUCTS
-                        appliesToSubscriptions: false
+                      - id: gid://shopify/DiscountAutomaticNode/5678901234
+                        type: BOGO_DISCOUNT
+                        title: Buy 1 cookie box, get 1 free
+                        method: AUTOMATIC
+                        code: null
                         combinesWith:
                           productDiscounts: false
-                          orderDiscounts: false
-                          shippingDiscounts: false
-                        currencyCode: USD
-                        startsAt: "2026-11-25T00:00:00Z"
-                        endsAt: "2026-12-01T00:00:00Z"
+                          orderDiscounts: true
+                          shippingDiscounts: true
+                        startsAt: "2026-10-01T00:00:00Z"
+                        endsAt: "2026-10-31T23:59:59Z"
                         trigger:
-                          type: ALL
-                          items: []
+                          type: PRODUCTS
+                          items:
+                            - gid://shopify/Product/8012345678901
                         excludes: null
                         customerEligibility:
                           type: ALL
                           items: []
                           b2b: false
+                        rewardStrategy: SAME_PRODUCT
+                        maxUsesPerOrder: 2
                         tiers:
                           - id: tier-1
-                            quantity: 5
-                            value: 2.5
-                            isDefault: true
+                            buyQuantity: 1
+                            getQuantity: 1
                 empty:
                   summary: No campaigns
                   value:
@@ -129,14 +126,12 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /campaigns/products/search:
     post:
-      operationId: getSpecificProductCampaigns
-      summary: Get specific product campaigns
+      operationId: getCampaignsForProduct
+      summary: Get campaigns for a specific product
       description: >-
-        Searches the store's product campaigns and returns the ones that apply
-        right now to one product and buyer, best first. This is a read-only
-        lookup: it doesn't create or change anything. Dealeasy evaluates
-        targeting, exclusions and customer rules for you, so the response only
-        contains what to show.
+        Returns the product campaigns, of every supported type, that apply
+        right now to one product and buyer, newest first. This is a read-only
+        search: it doesn't create or change anything.
       tags:
         - Product campaigns
       parameters:
@@ -146,7 +141,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SpecificProductCampaignsRequest"
+              $ref: "#/components/schemas/ProductCampaignsSearchRequest"
             examples:
               loggedInCustomer:
                 summary: Logged-in customer
@@ -171,33 +166,50 @@ paths:
       responses:
         "200":
           description: >-
-            The campaigns that apply, best first. `campaigns` is empty when
-            nothing applies.
+            The campaigns that apply now, newest first. `campaigns` is empty
+            when nothing applies.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SpecificProductCampaignsResponse"
+                $ref: "#/components/schemas/ProductCampaignsSearchResponse"
               examples:
                 matched:
-                  summary: A campaign applies
+                  summary: Campaigns apply
                   value:
                     campaigns:
+                      - id: gid://shopify/DiscountAutomaticNode/5678901234
+                        type: BOGO_DISCOUNT
+                        title: Buy 1 cookie box, get 1 free
+                        method: AUTOMATIC
+                        code: null
+                        combinesWith:
+                          productDiscounts: false
+                          orderDiscounts: true
+                          shippingDiscounts: true
+                        startsAt: "2026-10-01T00:00:00Z"
+                        endsAt: "2026-10-31T23:59:59Z"
+                        rewardStrategy: SAME_PRODUCT
+                        maxUsesPerOrder: 2
+                        tiers:
+                          - id: tier-1
+                            buyQuantity: 1
+                            getQuantity: 1
                       - id: gid://shopify/DiscountAutomaticNode/1234567890
                         type: VOLUME_DISCOUNT
                         title: Buy more, save more
                         method: AUTOMATIC
                         code: null
-                        discountType: PERCENTAGE
-                        quantityType: RANGE
-                        quantityScope: PER_PRODUCT
-                        appliesToSubscriptions: false
                         combinesWith:
                           productDiscounts: false
                           orderDiscounts: true
                           shippingDiscounts: true
-                        currencyCode: USD
                         startsAt: "2026-09-01T00:00:00Z"
                         endsAt: null
+                        discountType: PERCENTAGE
+                        quantityType: RANGE
+                        quantityScope: PER_PRODUCT
+                        appliesToSubscriptions: false
+                        currencyCode: USD
                         tiers:
                           - id: tier-1
                             quantity: 2
@@ -266,7 +278,7 @@ components:
               summary: Unknown campaign type
               value:
                 code: INVALID_REQUEST
-                message: type must be one of VOLUME_DISCOUNT.
+                message: type must be one of VOLUME_DISCOUNT, BOGO_DISCOUNT.
     Unauthenticated:
       description: Authentication failed.
       content:
@@ -317,9 +329,10 @@ components:
             code: INTERNAL_SERVER_ERROR
             message: An unexpected error occurred. Please try again later.
   schemas:
-    SpecificProductCampaignsRequest:
+    # ---------------------------------------------------------------- requests
+    ProductCampaignsSearchRequest:
       type: object
-      description: The product and buyer to evaluate. Only `productId` is required.
+      description: The product and buyer to evaluate.
       required: [productId]
       properties:
         productId:
@@ -370,45 +383,48 @@ components:
           description: The customer's tags.
           items:
             type: string
+    # --------------------------------------------------------------- responses
     ProductCampaignsResponse:
       type: object
       required: [campaigns]
       properties:
         campaigns:
           type: array
-          description: Active and scheduled product campaigns.
+          description: >-
+            Active and scheduled product campaigns. Check `type` and skip types
+            you don't support.
           items:
-            $ref: "#/components/schemas/VolumeDiscountCampaign"
-    SpecificProductCampaignsResponse:
+            oneOf:
+              - $ref: "#/components/schemas/VolumeDiscountCampaign"
+              - $ref: "#/components/schemas/BogoCampaign"
+            discriminator:
+              propertyName: type
+              mapping:
+                VOLUME_DISCOUNT: "#/components/schemas/VolumeDiscountCampaign"
+                BOGO_DISCOUNT: "#/components/schemas/BogoCampaign"
+    ProductCampaignsSearchResponse:
       type: object
       required: [campaigns]
       properties:
         campaigns:
           type: array
-          description: Campaigns that apply now, best first.
+          description: >-
+            Campaigns that apply now, newest first. Check `type` and skip types
+            you don't support.
           items:
-            $ref: "#/components/schemas/VolumeDiscountCampaignSummary"
-    VolumeDiscountCampaignSummary:
+            oneOf:
+              - $ref: "#/components/schemas/VolumeDiscount"
+              - $ref: "#/components/schemas/Bogo"
+            discriminator:
+              propertyName: type
+              mapping:
+                VOLUME_DISCOUNT: "#/components/schemas/VolumeDiscount"
+                BOGO_DISCOUNT: "#/components/schemas/Bogo"
+    # ------------------------------------------------------- shared campaign parts
+    CampaignBase:
       type: object
-      description: >-
-        A volume discount campaign as returned by Get specific product campaigns.
-        Targeting, exclusion and customer rules are already applied, so they
-        are not included.
-      required:
-        - id
-        - type
-        - title
-        - method
-        - code
-        - discountType
-        - quantityType
-        - quantityScope
-        - appliesToSubscriptions
-        - combinesWith
-        - currencyCode
-        - startsAt
-        - endsAt
-        - tiers
+      description: Fields every campaign has, whatever its type.
+      required: [id, type, title, method, code, combinesWith, startsAt, endsAt]
       properties:
         id:
           type: string
@@ -416,8 +432,7 @@ components:
           example: gid://shopify/DiscountAutomaticNode/1234567890
         type:
           type: string
-          enum: [VOLUME_DISCOUNT]
-          description: The campaign type. Ignore campaigns with a type you don't support.
+          description: The campaign type. Decides which other fields are present.
         title:
           type: string
           description: The discount title set by the merchant.
@@ -428,29 +443,8 @@ components:
         code:
           type: [string, "null"]
           description: The discount code for `CODE` campaigns; `null` for `AUTOMATIC`.
-        discountType:
-          type: string
-          enum: [PERCENTAGE, FIXED_AMOUNT]
-          description: How each tier's `value` is read.
-        quantityType:
-          type: string
-          enum: [FIXED, RANGE]
-          description: >-
-            `RANGE`: a tier applies at its `quantity` or more. `FIXED`: a tier
-            applies only at exactly its `quantity`.
-        quantityScope:
-          type: string
-          enum: [PER_PRODUCT, PER_VARIANT, ALL_PRODUCTS]
-          description: How cart quantities are counted toward a tier.
-        appliesToSubscriptions:
-          type: boolean
-          description: "`true` if the discount also applies to subscription purchases."
         combinesWith:
           $ref: "#/components/schemas/CombinesWith"
-        currencyCode:
-          type: string
-          description: The store currency (ISO 4217). `FIXED_AMOUNT` values are in this currency.
-          example: USD
         startsAt:
           type: string
           format: date-time
@@ -459,30 +453,25 @@ components:
           type: [string, "null"]
           format: date-time
           description: When the campaign ends; `null` if it has no end date.
-        tiers:
-          type: array
-          description: Tiers in ascending order of quantity.
-          items:
-            $ref: "#/components/schemas/Tier"
-    VolumeDiscountCampaign:
-      description: A volume discount campaign with its full rules.
-      allOf:
-        - $ref: "#/components/schemas/VolumeDiscountCampaignSummary"
-        - type: object
-          required: [trigger, excludes, customerEligibility]
-          properties:
-            trigger:
-              $ref: "#/components/schemas/Trigger"
-            excludes:
-              oneOf:
-                - $ref: "#/components/schemas/Excludes"
-                - type: "null"
-              description: Products the campaign never applies to; `null` if there are no exclusions.
-            customerEligibility:
-              $ref: "#/components/schemas/CustomerEligibility"
+    CampaignRules:
+      type: object
+      description: Targeting and eligibility rules. Only returned by Get all product campaigns.
+      required: [trigger, excludes, customerEligibility]
+      properties:
+        trigger:
+          $ref: "#/components/schemas/Trigger"
+        excludes:
+          oneOf:
+            - $ref: "#/components/schemas/Excludes"
+            - type: "null"
+          description: Products the campaign never applies to; `null` if there are no exclusions.
+        customerEligibility:
+          $ref: "#/components/schemas/CustomerEligibility"
     Trigger:
       type: object
-      description: Which products the campaign targets.
+      description: >-
+        Which products the campaign targets. Volume discounts support every
+        type; BOGO supports `ALL`, `PRODUCTS` and `COLLECTIONS`.
       required: [type, items]
       properties:
         type:
@@ -534,7 +523,53 @@ components:
           type: boolean
         shippingDiscounts:
           type: boolean
-    Tier:
+    # --------------------------------------------------------- volume discount
+    VolumeDiscount:
+      title: Volume discount
+      description: >-
+        A `VOLUME_DISCOUNT` campaign as returned by Get campaigns for a specific
+        product. See the Volume discount page for every field.
+      allOf:
+        - $ref: "#/components/schemas/CampaignBase"
+        - type: object
+          required: [discountType, quantityType, quantityScope, appliesToSubscriptions, currencyCode, tiers]
+          properties:
+            type:
+              type: string
+              enum: [VOLUME_DISCOUNT]
+            discountType:
+              type: string
+              enum: [PERCENTAGE, FIXED_AMOUNT]
+              description: How each tier's `value` is read.
+            quantityType:
+              type: string
+              enum: [FIXED, RANGE]
+              description: >-
+                `RANGE`: a tier applies at its `quantity` or more. `FIXED`: a
+                tier applies only at exactly its `quantity`.
+            quantityScope:
+              type: string
+              enum: [PER_PRODUCT, PER_VARIANT, ALL_PRODUCTS]
+              description: How cart quantities are counted toward a tier.
+            appliesToSubscriptions:
+              type: boolean
+              description: "`true` if the discount also applies to subscription purchases."
+            currencyCode:
+              type: string
+              description: The store currency (ISO 4217). `FIXED_AMOUNT` values are in this currency.
+              example: USD
+            tiers:
+              type: array
+              description: Tiers in ascending order of quantity.
+              items:
+                $ref: "#/components/schemas/VolumeDiscountTier"
+    VolumeDiscountCampaign:
+      title: Volume discount
+      description: A `VOLUME_DISCOUNT` campaign with its rules, as returned by Get all product campaigns.
+      allOf:
+        - $ref: "#/components/schemas/VolumeDiscount"
+        - $ref: "#/components/schemas/CampaignRules"
+    VolumeDiscountTier:
       type: object
       required: [id, quantity, value, isDefault]
       properties:
@@ -554,6 +589,61 @@ components:
         isDefault:
           type: boolean
           description: "`true` for the tier to preselect."
+    # -------------------------------------------------------------------- BOGO
+    Bogo:
+      title: BOGO
+      description: >-
+        A `BOGO_DISCOUNT` campaign as returned by Get campaigns for a specific
+        product. See the BOGO page for every field.
+      allOf:
+        - $ref: "#/components/schemas/CampaignBase"
+        - type: object
+          required: [rewardStrategy, maxUsesPerOrder, tiers]
+          properties:
+            type:
+              type: string
+              enum: [BOGO_DISCOUNT]
+            rewardStrategy:
+              type: string
+              enum: [SAME_PRODUCT, ANY_ELIGIBLE]
+              description: >-
+                `SAME_PRODUCT`: the free items must be the same product as the
+                ones bought. `ANY_ELIGIBLE`: the free items can be any product
+                the campaign applies to.
+            maxUsesPerOrder:
+              type: [integer, "null"]
+              minimum: 1
+              description: >-
+                The most times the offer can be applied in one order; `null`
+                if there is no limit.
+            tiers:
+              type: array
+              description: Buy X, get Y tiers.
+              items:
+                $ref: "#/components/schemas/BogoTier"
+    BogoCampaign:
+      title: BOGO
+      description: A `BOGO_DISCOUNT` campaign with its rules, as returned by Get all product campaigns.
+      allOf:
+        - $ref: "#/components/schemas/Bogo"
+        - $ref: "#/components/schemas/CampaignRules"
+    BogoTier:
+      type: object
+      required: [id, buyQuantity, getQuantity]
+      properties:
+        id:
+          type: string
+          description: Tier identifier, unique within the campaign (`tier-1`, `tier-2`, ...).
+          example: tier-1
+        buyQuantity:
+          type: integer
+          minimum: 1
+          description: How many items the buyer pays for.
+        getQuantity:
+          type: integer
+          minimum: 1
+          description: How many items the buyer then gets for free.
+    # ------------------------------------------------------------------ errors
     ResponseError:
       type: object
       required: [code, message]
