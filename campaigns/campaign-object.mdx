@@ -1,0 +1,179 @@
+---
+title: "Campaign object"
+description: "Field reference for volume discount campaigns."
+---
+
+Both endpoints return `{ "campaigns": [...] }`. Every campaign has the same core fields. [List product campaigns](/campaigns/list-product-campaigns) also includes the rule fields (`trigger`, `excludes` and `customerEligibility`). [Get specific product campaigns](/campaigns/get-specific-product-campaigns) leaves them out, because it has already applied them.
+
+```json Example (from List product campaigns)
+{
+  "id": "gid://shopify/DiscountAutomaticNode/1234567890",
+  "type": "VOLUME_DISCOUNT",
+  "title": "Buy more, save more",
+  "method": "AUTOMATIC",
+  "code": null,
+  "discountType": "PERCENTAGE",
+  "quantityType": "RANGE",
+  "quantityScope": "PER_PRODUCT",
+  "appliesToSubscriptions": false,
+  "combinesWith": { "productDiscounts": false, "orderDiscounts": true, "shippingDiscounts": true },
+  "currencyCode": "USD",
+  "startsAt": "2026-09-01T00:00:00Z",
+  "endsAt": null,
+  "trigger": { "type": "COLLECTIONS", "items": ["gid://shopify/Collection/411234567890"] },
+  "excludes": { "type": "TAGS", "items": ["clearance"] },
+  "customerEligibility": { "type": "ALL", "items": [], "b2b": true },
+  "tiers": [
+    { "id": "tier-1", "quantity": 2, "value": 5, "isDefault": false },
+    { "id": "tier-2", "quantity": 3, "value": 10, "isDefault": true }
+  ]
+}
+```
+
+## Core fields
+
+<ResponseField name="id" type="string" required>
+  The Shopify discount GID, such as `gid://shopify/DiscountAutomaticNode/…` or `gid://shopify/DiscountCodeNode/…`. It stays the same for the life of the campaign. Use it as your stable reference.
+</ResponseField>
+
+<ResponseField name="type" type="enum<string>" required>
+  The campaign type. Currently always `VOLUME_DISCOUNT`. Skip campaigns with a type you don't support.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  The title set by the merchant. For `CODE` campaigns it usually matches the code.
+</ResponseField>
+
+<ResponseField name="method" type="enum<string>" required>
+  `AUTOMATIC`: Shopify applies it at checkout once the quantity qualifies.
+  `CODE`: the buyer must enter `code`, or you apply it to the cart.
+</ResponseField>
+
+<ResponseField name="code" type="string | null" required>
+  The discount code for `CODE` campaigns. Always `null` for `AUTOMATIC`.
+</ResponseField>
+
+<ResponseField name="discountType" type="enum<string>" required>
+  `PERCENTAGE` or `FIXED_AMOUNT`. Controls how each tier's `value` is read. See [tier values](#tier-values).
+</ResponseField>
+
+<ResponseField name="quantityType" type="enum<string>" required>
+  `RANGE`: a tier applies at its `quantity` **or more**, and the highest qualifying tier wins.
+  `FIXED`: a tier applies only at **exactly** its `quantity`. Quantities between tiers get no discount.
+</ResponseField>
+
+<ResponseField name="quantityScope" type="enum<string>" required>
+  How cart quantities are counted toward a tier:
+
+  | Value | Counted | Example: 2 × Product A (red), 1 × Product A (blue), 1 × Product B |
+  | --- | --- | --- |
+  | `PER_PRODUCT` | Per product | A counts 3, B counts 1 |
+  | `PER_VARIANT` | Per variant (cart line) | A red counts 2, A blue 1, B 1 |
+  | `ALL_PRODUCTS` | Across all qualifying products | 4 in total |
+</ResponseField>
+
+<ResponseField name="appliesToSubscriptions" type="boolean" required>
+  `true` if the discount also applies when the product is bought as a subscription.
+</ResponseField>
+
+<ResponseField name="combinesWith" type="object" required>
+  Which other kinds of Shopify discounts this one can be combined with at checkout.
+
+  <Expandable title="properties">
+    <ResponseField name="productDiscounts" type="boolean" required />
+    <ResponseField name="orderDiscounts" type="boolean" required />
+    <ResponseField name="shippingDiscounts" type="boolean" required />
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="currencyCode" type="string" required>
+  The store currency (ISO 4217), such as `USD`. `FIXED_AMOUNT` values are in this currency.
+</ResponseField>
+
+<ResponseField name="startsAt" type="string" required>
+  When the campaign starts (ISO 8601, UTC).
+</ResponseField>
+
+<ResponseField name="endsAt" type="string | null" required>
+  When the campaign ends (ISO 8601, UTC), or `null` if it has no end date.
+</ResponseField>
+
+<ResponseField name="tiers" type="Tier[]" required>
+  The tiers, in ascending order of `quantity`.
+
+  <Expandable title="Tier">
+    <ResponseField name="id" type="string" required>
+      Identifies the tier within the campaign: `tier-1`, `tier-2`, … in order. Use it as a UI key. Don't store it, because it changes if the merchant edits the tiers.
+    </ResponseField>
+    <ResponseField name="quantity" type="integer" required>
+      The quantity that unlocks the tier. See `quantityType`.
+    </ResponseField>
+    <ResponseField name="value" type="number" required>
+      The discount per item. See [tier values](#tier-values).
+    </ResponseField>
+    <ResponseField name="isDefault" type="boolean" required>
+      `true` for the tier to preselect in a quantity selector. At most one tier is `true`, and there may be none. If none is set, preselect the first tier or quantity 1.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Rule fields (List product campaigns only)
+
+<ResponseField name="trigger" type="object" required>
+  The products the campaign targets.
+
+  <Expandable title="properties">
+    <ResponseField name="type" type="enum<string>" required>
+      `ALL`, `PRODUCTS`, `VARIANTS`, `COLLECTIONS` or `TAGS`.
+    </ResponseField>
+    <ResponseField name="items" type="string[]" required>
+      Product, variant or collection GIDs, or product tags for `TAGS`. Empty for `ALL`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="excludes" type="object | null" required>
+  Products the campaign never applies to, even if `trigger` matches. `null` if there are no exclusions.
+
+  <Expandable title="properties">
+    <ResponseField name="type" type="enum<string>" required>
+      `PRODUCTS`, `COLLECTIONS` or `TAGS`.
+    </ResponseField>
+    <ResponseField name="items" type="string[]" required>
+      Product or collection GIDs, or product tags for `TAGS`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="customerEligibility" type="object" required>
+  The customers who can get the campaign. `CODE` campaigns are always `ALL`.
+
+  <Expandable title="properties">
+    <ResponseField name="type" type="enum<string>" required>
+      `ALL` for everyone, `CUSTOMERS` for the listed customers, or `TAGS` for customers with any of the listed tags.
+    </ResponseField>
+    <ResponseField name="items" type="string[]" required>
+      Customer GIDs for `CUSTOMERS`, customer tags for `TAGS`. Empty for `ALL`.
+    </ResponseField>
+    <ResponseField name="b2b" type="boolean" required>
+      `false` if B2B customers are excluded.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Tier values
+
+`value` is always the discount **per item**:
+
+| `discountType` | `value` means | Example | Price per item on a 20.00 USD product |
+| --- | --- | --- | --- |
+| `PERCENTAGE` | Percent off each item, from 0 to 100 | `10` | 20.00 − 10% = **18.00** |
+| `FIXED_AMOUNT` | Amount off each item, in `currencyCode` | `2.5` | 20.00 − 2.50 = **17.50** |
+
+<Note>
+  `FIXED_AMOUNT` values are in the **store's** currency (`currencyCode`). If you show prices in another currency, convert `value` with the same exchange rate you use for product prices. At checkout, Shopify converts the discount to the buyer's currency itself.
+</Note>
+
+<Info>
+  These values show what Shopify will apply at checkout. The final cart total can still differ, for example when discounts are combined (`combinesWith`). Checkout is always the source of truth.
+</Info>

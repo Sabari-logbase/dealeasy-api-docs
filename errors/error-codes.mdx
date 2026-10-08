@@ -34,18 +34,19 @@ Every error response has the same JSON shape:
 
 ## INVALID_REQUEST
 
-**HTTP 400.** A header or query parameter is malformed, or it refers to something that doesn't exist in the store. Common causes:
+**HTTP 400.** A header, path parameter, query parameter or body field is malformed. Common causes:
 
-- `productId` is missing or isn't a numeric ID.
-- `variantId` isn't a numeric ID, or it belongs to a different product.
-- The product doesn't exist in the store.
-- `country` isn't a two-letter country code like `Shopify.country`, or `locale` isn't a language code like `Shopify.locale`.
-- A parameter is sent more than once.
+- `productId` is missing from the body, or isn't a numeric ID or a `gid://shopify/Product/<id>` GID.
+- `variantId`, a collection ID or `customer.id` isn't a numeric ID or a GID of the right type.
+- `collections`, `tags` or `customer.tags` isn't an array of strings, or has more than 250 items.
+- `customer.isB2b` isn't a boolean.
+- The POST body isn't valid JSON, or `Content-Type` isn't `application/json`.
+- `type` isn't a supported campaign type, or a query parameter is sent more than once.
 - `x-shopify-domain` isn't a `*.myshopify.com` domain.
-- The path isn't a supported endpoint.
+- The path or method isn't a supported endpoint.
 
 ```json
-{ "code": "INVALID_REQUEST", "message": "variantId does not belong to productId." }
+{ "code": "INVALID_REQUEST", "message": "customer.isB2b must be a boolean." }
 ```
 
 **Fix:** read `message`, correct the parameter, and make sure the IDs come from the same store as `x-shopify-domain`.
@@ -88,10 +89,10 @@ Every error response has the same JSON shape:
 **HTTP 403.** The integration is valid but doesn't have the scope this endpoint needs.
 
 ```json
-{ "code": "FORBIDDEN", "message": "This integration does not have the read_volume_discounts scope." }
+{ "code": "FORBIDDEN", "message": "This integration does not have the read_campaigns scope." }
 ```
 
-**Fix:** the merchant must create an integration that includes the scope named in `message`. For volume discounts, that is `read_volume_discounts`.
+**Fix:** the merchant must create an integration that includes the scope named in `message`. For campaigns, that is `read_campaigns`.
 
 ## TOO_MANY_REQUESTS
 
@@ -111,24 +112,24 @@ Every error response has the same JSON shape:
 { "code": "INTERNAL_SERVER_ERROR", "message": "An unexpected error occurred. Please try again later." }
 ```
 
-**Fix:** retry with exponential backoff. While it fails, show the product without volume discount messaging instead of failing the page. If it keeps happening, contact Dealeasy support with the time of the request and the store domain. Never include your API key.
+**Fix:** retry with exponential backoff. While it fails, show the product without campaign messaging instead of failing the page. If it keeps happening, contact Dealeasy support with the time of the request and the store domain. Never include your API key.
 
 ## Handling errors
 
 ```javascript
-async function fetchVolumeDiscounts(url, headers, attempt = 0) {
-  const response = await fetch(url, { headers });
+async function fetchCampaigns(url, options, attempt = 0) {
+  const response = await fetch(url, options);
   const body = await response.json();
   if (response.ok) return body;
 
   const retryable = body.code === "TOO_MANY_REQUESTS" || body.code === "INTERNAL_SERVER_ERROR";
   if (retryable && attempt < 3) {
     await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500));
-    return fetchVolumeDiscounts(url, headers, attempt + 1);
+    return fetchCampaigns(url, options, attempt + 1);
   }
 
-  // Degrade gracefully: render the product without volume discounts.
+  // Degrade gracefully: render the product without campaigns.
   console.error(`Dealeasy API ${response.status} ${body.code}: ${body.message}`);
-  return { eligible: false, volumeDiscounts: [] };
+  return { campaigns: [] };
 }
 ```

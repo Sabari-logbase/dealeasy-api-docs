@@ -1,9 +1,9 @@
 ---
 title: "Overview"
-description: "Use the Dealeasy API to show a merchant's volume discounts in your own storefront or app."
+description: "Use the Dealeasy API to show a merchant's discount campaigns in your own storefront or app."
 ---
 
-The Dealeasy API gives you read-only access to the **volume discounts** (tiered quantity discounts) a merchant has set up in the Dealeasy Shopify app. For any product, you can get the discount tiers that apply and show them in your own UI. For example, "Buy 3, save 10%".
+The Dealeasy API gives you read-only access to the **campaigns** a merchant runs with the Dealeasy Shopify app. Today that means **volume discounts**: tiered quantity discounts such as "Buy 3, save 10%". For any product and buyer, you can get the campaigns that apply and show them in your own UI.
 
 Shopify still applies the discounts at checkout. The API tells you what to display. It doesn't change prices or carts.
 
@@ -14,11 +14,11 @@ Shopify still applies the discounts at checkout. The API tells you what to displ
     Hydrogen, Next.js, or any custom frontend that can't use the Dealeasy theme widgets.
   </Card>
   <Card title="Custom Shopify apps" icon="puzzle-piece" href="/guides/shopify-custom-app">
-    Backends and custom apps that need a store's volume discount data.
+    Backends and custom apps that need a store's campaign data.
   </Card>
 </CardGroup>
 
-If the merchant uses a standard Online Store theme, the Dealeasy theme widgets already show volume discounts, so you don't need this API.
+If the merchant uses a standard Online Store theme, the Dealeasy theme widgets already show these campaigns, so you don't need this API.
 
 ## How it works
 
@@ -26,41 +26,44 @@ If the merchant uses a standard Online Store theme, the Dealeasy theme widgets a
   <Step title="The merchant creates an integration">
     In the Dealeasy admin, the merchant creates an integration and gets an API key. See [Create an integration](/getting-started/create-an-integration).
   </Step>
-  <Step title="Your server calls the API">
+  <Step title="You call the API">
     Send the API key and the store's `myshopify.com` domain as headers. See [Authentication](/getting-started/authentication).
   </Step>
-  <Step title="You render the tiers">
-    Request [volume discounts](/volume-discounts/get-volume-discounts) for a product and render the returned tiers.
+  <Step title="You render the campaigns">
+    Send a product and the buyer to [Get specific product campaigns](/campaigns/get-specific-product-campaigns), and render the tiers you get back.
   </Step>
 </Steps>
 
 ## Quick example
 
 ```bash
-curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
-  --data-urlencode "productId=8012345678901" \
-  --data-urlencode "country=US" \
-  --data-urlencode "locale=en" \
+curl -X POST "https://api.dealeasy.app/api/public/v1/campaigns/products/search" \
   -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
-  -H "x-shopify-domain: your-store.myshopify.com"
+  -H "x-shopify-domain: your-store.myshopify.com" \
+  -H "Content-Type: application/json" \
+  -d '{ "productId": "8012345678901", "variantId": "44012345678901", "collections": ["411234567890"], "tags": ["summer"] }'
 ```
 
 ```json
 {
-  "eligible": true,
-  "volumeDiscounts": [
+  "campaigns": [
     {
-      "discountId": "gid://shopify/DiscountAutomaticNode/1234567890",
+      "id": "gid://shopify/DiscountAutomaticNode/1234567890",
+      "type": "VOLUME_DISCOUNT",
       "title": "Buy more, save more",
-      "method": "AUTOMATIC_DISCOUNT",
-      "discountCode": null,
+      "method": "AUTOMATIC",
+      "code": null,
       "discountType": "PERCENTAGE",
-      "fixedQuantityDiscount": false,
-      "applicationStrategy": "INDIVIDUAL_PRODUCTS",
+      "quantityType": "RANGE",
+      "quantityScope": "PER_PRODUCT",
+      "appliesToSubscriptions": false,
+      "combinesWith": { "productDiscounts": false, "orderDiscounts": true, "shippingDiscounts": true },
       "currencyCode": "USD",
-      "discountTiers": [
-        { "id": "tier-1", "quantity": 2, "value": 5, "highlight": "NONE", "isDefault": false },
-        { "id": "tier-2", "quantity": 3, "value": 10, "highlight": "MOST_POPULAR", "isDefault": true }
+      "startsAt": "2026-09-01T00:00:00Z",
+      "endsAt": null,
+      "tiers": [
+        { "id": "tier-1", "quantity": 2, "value": 5, "isDefault": false },
+        { "id": "tier-2", "quantity": 3, "value": 10, "isDefault": true }
       ]
     }
   ]
@@ -70,6 +73,13 @@ curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
 <Warning>
   The API key gives access to the merchant's discount data. Only use it on a server. Never put it in browser JavaScript, mobile apps, or public repositories.
 </Warning>
+
+## Endpoints
+
+| Method | Path | Use it to |
+| --- | --- | --- |
+| `GET` | [`/campaigns/products`](/campaigns/list-product-campaigns) | List every active and scheduled product campaign with its rules. |
+| `POST` | [`/campaigns/products/search`](/campaigns/get-specific-product-campaigns) | Get the active campaigns that apply to one product and buyer. |
 
 ## Base URL
 

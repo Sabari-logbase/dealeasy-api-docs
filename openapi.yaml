@@ -3,196 +3,231 @@ info:
   title: Dealeasy API
   version: 1.0.0
   description: >-
-    Read the volume discounts a merchant has configured in Dealeasy, so you can
-    display tiered quantity pricing in headless storefronts and custom apps.
+    Read the discount campaigns a merchant has configured in Dealeasy, so you
+    can display them in headless storefronts and custom apps.
 servers:
   # TODO: replace with the production Dealeasy API host before publishing
-  - url: https://discounts.logbase.io/api/public/v1
+  - url: https://api.dealeasy.app/api/public/v1
     description: Production
 security:
   - DealeasyApiKey: []
 tags:
-  - name: Volume Discounts
+  - name: Product campaigns
 paths:
-  /volume-discounts:
+  /campaigns/products:
     get:
-      operationId: getVolumeDiscounts
-      summary: Get volume discounts
+      operationId: listProductCampaigns
+      summary: List product campaigns
       description: >-
-        Returns the active volume discounts that apply to a product (and
-        optionally a specific variant). Only discounts available to every
-        customer are returned. Results are sorted best discount first.
+        Returns every active and scheduled product campaign in the store, with
+        its full targeting, exclusion and customer rules. Use this when you want
+        to cache campaigns and work out which ones apply yourself.
       tags:
-        - Volume Discounts
+        - Product campaigns
       parameters:
         - $ref: "#/components/parameters/ShopifyDomain"
-        - name: productId
-          in: query
-          required: true
-          description: >-
-            The numeric Shopify product ID, for example `8012345678901`. In an
-            Online Store theme this is `{{ product.id }}`. If you have a GID
-            (`gid://shopify/Product/8012345678901`), send only the number after
-            the last `/`.
-          schema:
-            type: string
-            pattern: "^[0-9]+$"
-            example: "8012345678901"
-        - name: variantId
+        - name: type
           in: query
           required: false
           description: >-
-            The numeric Shopify variant ID, for example `44012345678901`. In an
-            Online Store theme this is `{{ product.selected_or_first_available_variant.id }}`.
-            Must belong to `productId`. Required to match discounts that target
-            specific variants.
+            Return only campaigns of this type. Without it, all supported
+            product campaign types are returned.
           schema:
             type: string
-            pattern: "^[0-9]+$"
-            example: "44012345678901"
-        - name: country
-          in: query
-          required: false
-          description: >-
-            The buyer's country as a two-letter ISO 3166-1 alpha-2 code. In the
-            Online Store this is the value of `Shopify.country`, for example `US`.
-          schema:
-            type: string
-            pattern: "^[A-Za-z]{2}$"
-            example: US
-        - name: locale
-          in: query
-          required: false
-          description: >-
-            The buyer's language. In the Online Store this is the value of
-            `Shopify.locale`, for example `en`, `fr` or `pt-BR`.
-          schema:
-            type: string
-            example: en
+            enum: [VOLUME_DISCOUNT]
       responses:
         "200":
-          description: >-
-            The request succeeded. `eligible` is `false` and `volumeDiscounts`
-            is empty when no volume discount applies.
+          description: The store's active and scheduled product campaigns.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VolumeDiscountResponse"
+                $ref: "#/components/schemas/ProductCampaignsResponse"
               examples:
-                eligible:
-                  summary: Product has volume discounts
+                campaigns:
+                  summary: Volume discount campaigns
                   value:
-                    eligible: true
-                    volumeDiscounts:
-                      - discountId: gid://shopify/DiscountAutomaticNode/1234567890
+                    campaigns:
+                      - id: gid://shopify/DiscountAutomaticNode/1234567890
+                        type: VOLUME_DISCOUNT
                         title: Buy more, save more
-                        method: AUTOMATIC_DISCOUNT
-                        discountCode: null
+                        method: AUTOMATIC
+                        code: null
                         discountType: PERCENTAGE
-                        fixedQuantityDiscount: false
-                        applicationStrategy: INDIVIDUAL_PRODUCTS
+                        quantityType: RANGE
+                        quantityScope: PER_PRODUCT
+                        appliesToSubscriptions: false
+                        combinesWith:
+                          productDiscounts: false
+                          orderDiscounts: true
+                          shippingDiscounts: true
                         currencyCode: USD
-                        discountTiers:
+                        startsAt: "2026-09-01T00:00:00Z"
+                        endsAt: null
+                        trigger:
+                          type: COLLECTIONS
+                          items:
+                            - gid://shopify/Collection/411234567890
+                        excludes:
+                          type: TAGS
+                          items:
+                            - clearance
+                        customerEligibility:
+                          type: ALL
+                          items: []
+                          b2b: true
+                        tiers:
                           - id: tier-1
                             quantity: 2
                             value: 5
-                            highlight: NONE
                             isDefault: false
                           - id: tier-2
                             quantity: 3
                             value: 10
-                            highlight: MOST_POPULAR
                             isDefault: true
-                          - id: tier-3
+                      - id: gid://shopify/DiscountCodeNode/9876543210
+                        type: VOLUME_DISCOUNT
+                        title: DE-BULK
+                        method: CODE
+                        code: DE-BULK
+                        discountType: FIXED_AMOUNT
+                        quantityType: FIXED
+                        quantityScope: ALL_PRODUCTS
+                        appliesToSubscriptions: false
+                        combinesWith:
+                          productDiscounts: false
+                          orderDiscounts: false
+                          shippingDiscounts: false
+                        currencyCode: USD
+                        startsAt: "2026-11-25T00:00:00Z"
+                        endsAt: "2026-12-01T00:00:00Z"
+                        trigger:
+                          type: ALL
+                          items: []
+                        excludes: null
+                        customerEligibility:
+                          type: ALL
+                          items: []
+                          b2b: false
+                        tiers:
+                          - id: tier-1
                             quantity: 5
-                            value: 15
-                            highlight: BEST_SAVINGS
-                            isDefault: false
-                notEligible:
-                  summary: No volume discount applies
+                            value: 2.5
+                            isDefault: true
+                empty:
+                  summary: No campaigns
                   value:
-                    eligible: false
-                    volumeDiscounts: []
+                    campaigns: []
         "400":
-          description: The request is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResponseError"
-              examples:
-                missingProductId:
-                  summary: Missing productId
-                  value:
-                    code: INVALID_REQUEST
-                    message: productId is required.
-                invalidDomain:
-                  summary: Invalid x-shopify-domain
-                  value:
-                    code: INVALID_REQUEST
-                    message: x-shopify-domain must be the store's myshopify.com domain, e.g. your-store.myshopify.com.
-                variantMismatch:
-                  summary: Variant does not belong to the product
-                  value:
-                    code: INVALID_REQUEST
-                    message: variantId does not belong to productId.
+          $ref: "#/components/responses/InvalidRequest"
         "401":
-          description: Authentication failed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResponseError"
-              examples:
-                missingHeader:
-                  summary: Missing header
-                  value:
-                    code: MISSING_AUTHORIZATION_HEADER
-                    message: "Missing required header(s): x-dealeasy-api-key."
-                invalidApiKey:
-                  summary: Invalid API key or store domain
-                  value:
-                    code: INVALID_API_KEY
-                    message: The API key is invalid for this store.
-                unauthorized:
-                  summary: Integration inactive or revoked
-                  value:
-                    code: UNAUTHORIZED
-                    message: This integration is inactive or has been revoked.
+          $ref: "#/components/responses/Unauthenticated"
         "403":
-          description: The integration is missing the required scope.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResponseError"
-              example:
-                code: FORBIDDEN
-                message: This integration does not have the read_volume_discounts scope.
+          $ref: "#/components/responses/Forbidden"
         "429":
-          description: Too many requests.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResponseError"
-              example:
-                code: TOO_MANY_REQUESTS
-                message: Too many requests. Please retry after a short delay.
+          $ref: "#/components/responses/TooManyRequests"
         "500":
-          description: An unexpected error occurred.
+          $ref: "#/components/responses/InternalServerError"
+  /campaigns/products/search:
+    post:
+      operationId: getSpecificProductCampaigns
+      summary: Get specific product campaigns
+      description: >-
+        Searches the store's product campaigns and returns the ones that apply
+        right now to one product and buyer, best first. This is a read-only
+        lookup: it doesn't create or change anything. Dealeasy evaluates
+        targeting, exclusions and customer rules for you, so the response only
+        contains what to show.
+      tags:
+        - Product campaigns
+      parameters:
+        - $ref: "#/components/parameters/ShopifyDomain"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpecificProductCampaignsRequest"
+            examples:
+              loggedInCustomer:
+                summary: Logged-in customer
+                value:
+                  productId: "8012345678901"
+                  variantId: "44012345678901"
+                  collections:
+                    - "411234567890"
+                    - gid://shopify/Collection/411234567891
+                  tags: [summer, cotton]
+                  customer:
+                    id: gid://shopify/Customer/7012345678901
+                    isB2b: false
+                    tags: [vip]
+              guest:
+                summary: Guest visitor
+                value:
+                  productId: gid://shopify/Product/8012345678901
+                  variantId: "44012345678901"
+                  collections: ["411234567890"]
+                  tags: [summer, cotton]
+      responses:
+        "200":
+          description: >-
+            The campaigns that apply, best first. `campaigns` is empty when
+            nothing applies.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ResponseError"
-              example:
-                code: INTERNAL_SERVER_ERROR
-                message: An unexpected error occurred. Please try again later.
+                $ref: "#/components/schemas/SpecificProductCampaignsResponse"
+              examples:
+                matched:
+                  summary: A campaign applies
+                  value:
+                    campaigns:
+                      - id: gid://shopify/DiscountAutomaticNode/1234567890
+                        type: VOLUME_DISCOUNT
+                        title: Buy more, save more
+                        method: AUTOMATIC
+                        code: null
+                        discountType: PERCENTAGE
+                        quantityType: RANGE
+                        quantityScope: PER_PRODUCT
+                        appliesToSubscriptions: false
+                        combinesWith:
+                          productDiscounts: false
+                          orderDiscounts: true
+                          shippingDiscounts: true
+                        currencyCode: USD
+                        startsAt: "2026-09-01T00:00:00Z"
+                        endsAt: null
+                        tiers:
+                          - id: tier-1
+                            quantity: 2
+                            value: 5
+                            isDefault: false
+                          - id: tier-2
+                            quantity: 3
+                            value: 10
+                            isDefault: true
+                none:
+                  summary: Nothing applies
+                  value:
+                    campaigns: []
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 components:
   securitySchemes:
     DealeasyApiKey:
       type: apiKey
       in: header
       name: x-dealeasy-api-key
-      description: >-
-        Your integration API key, in the format
-        `dealeasy_<integrationId>_<secret>`. Use it server-side only.
+      description: Your integration API key, in the format `dealeasy_<integrationId>_<secret>`.
   parameters:
     ShopifyDomain:
       name: x-shopify-domain
@@ -204,75 +239,308 @@ components:
       schema:
         type: string
         example: your-store.myshopify.com
+  responses:
+    InvalidRequest:
+      description: The request is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ResponseError"
+          examples:
+            missingProductId:
+              summary: Missing productId
+              value:
+                code: INVALID_REQUEST
+                message: productId is required.
+            invalidProductId:
+              summary: Invalid productId
+              value:
+                code: INVALID_REQUEST
+                message: productId must be a numeric product ID or a gid://shopify/Product/<id> GID.
+            invalidBody:
+              summary: Invalid body field
+              value:
+                code: INVALID_REQUEST
+                message: customer.isB2b must be a boolean.
+            invalidType:
+              summary: Unknown campaign type
+              value:
+                code: INVALID_REQUEST
+                message: type must be one of VOLUME_DISCOUNT.
+    Unauthenticated:
+      description: Authentication failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ResponseError"
+          examples:
+            missingHeader:
+              summary: Missing header
+              value:
+                code: MISSING_AUTHORIZATION_HEADER
+                message: "Missing required header(s): x-dealeasy-api-key."
+            invalidApiKey:
+              summary: Invalid API key or store domain
+              value:
+                code: INVALID_API_KEY
+                message: The API key is invalid for this store.
+            unauthorized:
+              summary: Integration inactive or revoked
+              value:
+                code: UNAUTHORIZED
+                message: This integration is inactive or has been revoked.
+    Forbidden:
+      description: The integration is missing the required scope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ResponseError"
+          example:
+            code: FORBIDDEN
+            message: This integration does not have the read_campaigns scope.
+    TooManyRequests:
+      description: Too many requests.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ResponseError"
+          example:
+            code: TOO_MANY_REQUESTS
+            message: Too many requests. Please retry after a short delay.
+    InternalServerError:
+      description: An unexpected error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ResponseError"
+          example:
+            code: INTERNAL_SERVER_ERROR
+            message: An unexpected error occurred. Please try again later.
   schemas:
-    VolumeDiscountResponse:
+    SpecificProductCampaignsRequest:
       type: object
-      required: [eligible, volumeDiscounts]
+      description: The product and buyer to evaluate. Only `productId` is required.
+      required: [productId]
       properties:
-        eligible:
-          type: boolean
-          description: "`true` when at least one volume discount applies."
-        volumeDiscounts:
+        productId:
+          type: string
+          description: >-
+            The Shopify product ID, numeric (`8012345678901`) or as a GID
+            (`gid://shopify/Product/8012345678901`).
+          example: "8012345678901"
+        variantId:
+          type: string
+          description: >-
+            The selected variant, numeric or as a GID. Campaigns that target
+            specific variants only match when this is sent.
+          example: "44012345678901"
+        collections:
           type: array
-          description: Applicable volume discounts, best discount first.
+          maxItems: 250
+          description: >-
+            IDs of all the collections the product belongs to, numeric or as
+            GIDs. Campaigns that target or exclude collections need this.
           items:
-            $ref: "#/components/schemas/VolumeDiscount"
-    VolumeDiscount:
+            type: string
+        tags:
+          type: array
+          maxItems: 250
+          description: >-
+            The product's tags. Campaigns that target or exclude tags need
+            this.
+          items:
+            type: string
+        customer:
+          $ref: "#/components/schemas/CustomerInput"
+    CustomerInput:
       type: object
+      description: The logged-in customer. Leave it out for guests.
+      properties:
+        id:
+          type: string
+          description: The customer ID, numeric or as a GID (`gid://shopify/Customer/<id>`).
+          example: gid://shopify/Customer/7012345678901
+        isB2b:
+          type: boolean
+          description: "`true` if the customer is buying on behalf of a B2B company."
+          default: false
+        tags:
+          type: array
+          maxItems: 250
+          description: The customer's tags.
+          items:
+            type: string
+    ProductCampaignsResponse:
+      type: object
+      required: [campaigns]
+      properties:
+        campaigns:
+          type: array
+          description: Active and scheduled product campaigns.
+          items:
+            $ref: "#/components/schemas/VolumeDiscountCampaign"
+    SpecificProductCampaignsResponse:
+      type: object
+      required: [campaigns]
+      properties:
+        campaigns:
+          type: array
+          description: Campaigns that apply now, best first.
+          items:
+            $ref: "#/components/schemas/VolumeDiscountCampaignSummary"
+    VolumeDiscountCampaignSummary:
+      type: object
+      description: >-
+        A volume discount campaign as returned by Get specific product campaigns.
+        Targeting, exclusion and customer rules are already applied, so they
+        are not included.
       required:
-        - discountId
+        - id
+        - type
         - title
         - method
-        - discountCode
+        - code
         - discountType
-        - fixedQuantityDiscount
-        - applicationStrategy
+        - quantityType
+        - quantityScope
+        - appliesToSubscriptions
+        - combinesWith
         - currencyCode
-        - discountTiers
+        - startsAt
+        - endsAt
+        - tiers
       properties:
-        discountId:
+        id:
           type: string
           description: The Shopify discount GID.
           example: gid://shopify/DiscountAutomaticNode/1234567890
+        type:
+          type: string
+          enum: [VOLUME_DISCOUNT]
+          description: The campaign type. Ignore campaigns with a type you don't support.
         title:
           type: string
           description: The discount title set by the merchant.
         method:
           type: string
-          enum: [AUTOMATIC_DISCOUNT, CODE_DISCOUNT]
+          enum: [AUTOMATIC, CODE]
           description: How the discount is applied at checkout.
-        discountCode:
+        code:
           type: [string, "null"]
-          description: The code to apply for `CODE_DISCOUNT`; `null` for `AUTOMATIC_DISCOUNT`.
+          description: The discount code for `CODE` campaigns; `null` for `AUTOMATIC`.
         discountType:
           type: string
           enum: [PERCENTAGE, FIXED_AMOUNT]
-          description: How each tier's `value` is interpreted.
-        fixedQuantityDiscount:
-          type: boolean
-          description: >-
-            `true` if a tier only applies at exactly its `quantity`; `false` if
-            it applies at its `quantity` or more.
-        applicationStrategy:
+          description: How each tier's `value` is read.
+        quantityType:
           type: string
-          enum: [INDIVIDUAL_PRODUCTS, ALL_PRODUCTS, INDIVIDUAL_VARIANT]
-          description: How quantities are counted toward a tier.
+          enum: [FIXED, RANGE]
+          description: >-
+            `RANGE`: a tier applies at its `quantity` or more. `FIXED`: a tier
+            applies only at exactly its `quantity`.
+        quantityScope:
+          type: string
+          enum: [PER_PRODUCT, PER_VARIANT, ALL_PRODUCTS]
+          description: How cart quantities are counted toward a tier.
+        appliesToSubscriptions:
+          type: boolean
+          description: "`true` if the discount also applies to subscription purchases."
+        combinesWith:
+          $ref: "#/components/schemas/CombinesWith"
         currencyCode:
-          type: [string, "null"]
-          description: The store's currency (ISO 4217). `FIXED_AMOUNT` values are in this currency.
+          type: string
+          description: The store currency (ISO 4217). `FIXED_AMOUNT` values are in this currency.
           example: USD
-        discountTiers:
+        startsAt:
+          type: string
+          format: date-time
+          description: When the campaign starts.
+        endsAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the campaign ends; `null` if it has no end date.
+        tiers:
           type: array
           description: Tiers in ascending order of quantity.
           items:
-            $ref: "#/components/schemas/DiscountTier"
-    DiscountTier:
+            $ref: "#/components/schemas/Tier"
+    VolumeDiscountCampaign:
+      description: A volume discount campaign with its full rules.
+      allOf:
+        - $ref: "#/components/schemas/VolumeDiscountCampaignSummary"
+        - type: object
+          required: [trigger, excludes, customerEligibility]
+          properties:
+            trigger:
+              $ref: "#/components/schemas/Trigger"
+            excludes:
+              oneOf:
+                - $ref: "#/components/schemas/Excludes"
+                - type: "null"
+              description: Products the campaign never applies to; `null` if there are no exclusions.
+            customerEligibility:
+              $ref: "#/components/schemas/CustomerEligibility"
+    Trigger:
       type: object
-      required: [id, quantity, value, highlight, isDefault]
+      description: Which products the campaign targets.
+      required: [type, items]
+      properties:
+        type:
+          type: string
+          enum: [ALL, PRODUCTS, VARIANTS, COLLECTIONS, TAGS]
+        items:
+          type: array
+          description: >-
+            Product, variant or collection GIDs, or product tags for `TAGS`.
+            Empty for `ALL`.
+          items:
+            type: string
+    Excludes:
+      type: object
+      required: [type, items]
+      properties:
+        type:
+          type: string
+          enum: [PRODUCTS, COLLECTIONS, TAGS]
+        items:
+          type: array
+          description: Product or collection GIDs, or product tags for `TAGS`.
+          items:
+            type: string
+    CustomerEligibility:
+      type: object
+      description: Which customers can get the campaign.
+      required: [type, items, b2b]
+      properties:
+        type:
+          type: string
+          enum: [ALL, CUSTOMERS, TAGS]
+        items:
+          type: array
+          description: Customer GIDs for `CUSTOMERS`, customer tags for `TAGS`. Empty for `ALL`.
+          items:
+            type: string
+        b2b:
+          type: boolean
+          description: "`false` if B2B customers are excluded."
+    CombinesWith:
+      type: object
+      description: Which other Shopify discount classes this discount can combine with at checkout.
+      required: [productDiscounts, orderDiscounts, shippingDiscounts]
+      properties:
+        productDiscounts:
+          type: boolean
+        orderDiscounts:
+          type: boolean
+        shippingDiscounts:
+          type: boolean
+    Tier:
+      type: object
+      required: [id, quantity, value, isDefault]
       properties:
         id:
           type: string
-          description: Tier identifier, unique within the discount (`tier-1`, `tier-2`, ...).
+          description: Tier identifier, unique within the campaign (`tier-1`, `tier-2`, ...).
           example: tier-1
         quantity:
           type: integer
@@ -283,13 +551,9 @@ components:
           description: >-
             Discount per item. A percentage (0-100) for `PERCENTAGE`, or an
             amount in `currencyCode` for `FIXED_AMOUNT`.
-        highlight:
-          type: string
-          enum: [NONE, MOST_POPULAR, BEST_SAVINGS]
-          description: Badge the merchant chose for this tier.
         isDefault:
           type: boolean
-          description: "`true` for the tier that should be preselected."
+          description: "`true` for the tier to preselect."
     ResponseError:
       type: object
       required: [code, message]

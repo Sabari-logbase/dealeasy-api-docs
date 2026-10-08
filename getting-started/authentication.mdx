@@ -16,15 +16,14 @@ Every request must include two headers:
 <CodeGroup>
 
 ```bash cURL
-curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
-  --data-urlencode "productId=8012345678901" \
+curl "https://api.dealeasy.app/api/public/v1/campaigns/products" \
   -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
   -H "x-shopify-domain: your-store.myshopify.com"
 ```
 
 ```javascript JavaScript (Node 18+)
 const response = await fetch(
-  "https://api.dealeasy.app/api/public/v1/volume-discounts?productId=8012345678901",
+  "https://api.dealeasy.app/api/public/v1/campaigns/products",
   {
     headers: {
       "x-dealeasy-api-key": process.env.DEALEASY_API_KEY,
@@ -43,7 +42,7 @@ A request is accepted only if all of these are true:
 1. Both headers are present.
 2. The API key is valid and belongs to the store in `x-shopify-domain`.
 3. The integration is active and has not been revoked.
-4. The integration has the scope the endpoint requires. For volume discounts, that is `read_volume_discounts`.
+4. The integration has the scope the endpoint requires. For campaigns, that is `read_campaigns`.
 
 | Failure | Code | HTTP |
 | --- | --- | --- |
@@ -61,4 +60,4 @@ A request is accepted only if all of these are true:
 
 Requests are rate limited per store and client IP. If you go over the limit, you get HTTP `429` with code [`TOO_MANY_REQUESTS`](/errors/error-codes#too_many_requests). Wait briefly and retry with exponential backoff. The standard `RateLimit-*` response headers show your remaining quota.
 
-Discount settings change rarely, so cache responses on your server for a short time. For example, cache per product for 1 to 5 minutes rather than calling the API on every page view.
+Campaigns change rarely, so cache responses for a short time. For example, cache [List product campaigns](/campaigns/list-product-campaigns) for 1 to 5 minutes and match campaigns yourself, rather than calling the API on every page view.

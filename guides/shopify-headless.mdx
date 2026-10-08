@@ -1,14 +1,14 @@
 ---
 title: "Shopify headless"
-description: "Show Dealeasy volume discounts in a Hydrogen or Next.js storefront."
+description: "Show Dealeasy campaigns in a Hydrogen or Next.js storefront."
 ---
 
-In a headless storefront, the Dealeasy theme widgets aren't available, so you render volume discounts yourself. Shopify still applies them at checkout.
+In a headless storefront, the Dealeasy theme widgets aren't available, so you render campaigns yourself. Shopify still applies them at checkout.
 
 ## Prerequisites
 
-- An integration of type `SHOPIFY_HEADLESS` with the `read_volume_discounts` scope. See [Create an integration](/getting-started/create-an-integration).
-- These server-side environment variables:
+- An integration of type `SHOPIFY_HEADLESS` with the `read_campaigns` scope. See [Create an integration](/getting-started/create-an-integration).
+- These environment variables:
 
 ```bash .env
 DEALEASY_API_KEY=dealeasy_xxxxxxxx_xxxxxxxxxxxxxxxx
@@ -18,85 +18,79 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
 ## Steps
 
 <Steps>
-  <Step title="Create a server-side client">
-    One function that calls the API and falls back to "no discounts" on error, so a Dealeasy outage never breaks your product page.
+  <Step title="Fetch the product with its collections and tags">
+    Dealeasy matches campaigns using the data you send, so query the product's `tags` and `collections` from the Storefront API along with the selected variant.
   </Step>
-  <Step title="Call it when the product page loads">
-    Pass the numeric product ID and selected variant ID, plus the buyer's country and locale. The Storefront API returns GIDs, so convert them to numeric IDs first. See [Country and locale](#country-and-locale).
+  <Step title="Call Get specific product campaigns">
+    POST the product and the buyer to [`/campaigns/products/search`](/campaigns/get-specific-product-campaigns). Storefront API GIDs can be sent as-is.
   </Step>
   <Step title="Render the tiers">
-    Show each tier's quantity and discount, with badges from `highlight`. Preselect the tier where `isDefault` is `true`.
+    Use `campaigns[0]`, which is the best one. Show each tier's quantity and discount, and preselect the tier where `isDefault` is `true`.
   </Step>
   <Step title="Let checkout apply it">
-    Automatic discounts apply at checkout by themselves. For code discounts, add `discountCode` to the cart.
+    `AUTOMATIC` campaigns apply at checkout by themselves. For `CODE` campaigns, add `code` to the cart.
   </Step>
 </Steps>
 
-## Server-side examples
+## Examples
 
 <Tabs>
   <Tab title="Hydrogen">
     ```ts app/lib/dealeasy.server.ts
     const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
 
-    export type VolumeDiscountResponse = {
-      eligible: boolean;
-      volumeDiscounts: Array<{
-        discountId: string;
-        title: string;
-        method: "AUTOMATIC_DISCOUNT" | "CODE_DISCOUNT";
-        discountCode: string | null;
-        discountType: "PERCENTAGE" | "FIXED_AMOUNT";
-        fixedQuantityDiscount: boolean;
-        applicationStrategy: "INDIVIDUAL_PRODUCTS" | "ALL_PRODUCTS" | "INDIVIDUAL_VARIANT";
-        currencyCode: string | null;
-        discountTiers: Array<{
-          id: string;
-          quantity: number;
-          value: number;
-          highlight: "NONE" | "MOST_POPULAR" | "BEST_SAVINGS";
-          isDefault: boolean;
-        }>;
-      }>;
+    export type Tier = { id: string; quantity: number; value: number; isDefault: boolean };
+
+    export type Campaign = {
+      id: string;
+      type: "VOLUME_DISCOUNT";
+      title: string;
+      method: "AUTOMATIC" | "CODE";
+      code: string | null;
+      discountType: "PERCENTAGE" | "FIXED_AMOUNT";
+      quantityType: "FIXED" | "RANGE";
+      quantityScope: "PER_PRODUCT" | "PER_VARIANT" | "ALL_PRODUCTS";
+      appliesToSubscriptions: boolean;
+      combinesWith: { productDiscounts: boolean; orderDiscounts: boolean; shippingDiscounts: boolean };
+      currencyCode: string;
+      startsAt: string;
+      endsAt: string | null;
+      tiers: Tier[];
     };
 
-    const NONE: VolumeDiscountResponse = { eligible: false, volumeDiscounts: [] };
+    export type Buyer = { id?: string; isB2b?: boolean; tags?: string[] };
 
-    // "gid://shopify/Product/8012345678901" -> "8012345678901"
-    export const toNumericId = (gid: string) => gid.split("/").pop()!;
-
-    // Hydrogen language "EN" -> "en", "PT_BR" -> "pt-BR" (same format as Shopify.locale)
-    export const toShopifyLocale = (language: string) => {
-      const [lang, region] = language.split("_");
-      return region ? `${lang.toLowerCase()}-${region.toUpperCase()}` : lang.toLowerCase();
-    };
-
-    export async function getVolumeDiscounts(
+    export async function getProductCampaigns(
       env: { DEALEASY_API_KEY: string; DEALEASY_SHOP_DOMAIN: string },
-      input: { productId: string; variantId?: string; country?: string; locale?: string },
-    ): Promise<VolumeDiscountResponse> {
-      const params = new URLSearchParams({ productId: input.productId });
-      if (input.variantId) params.set("variantId", input.variantId);
-      if (input.country) params.set("country", input.country);
-      if (input.locale) params.set("locale", input.locale);
-
+      product: { id: string; variantId?: string; collections: string[]; tags: string[] },
+      customer?: Buyer,
+    ): Promise<Campaign[]> {
       try {
-        const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
+        const response = await fetch(`${DEALEASY_API_URL}/campaigns/products/search`, {
+          method: "POST",
           headers: {
             "x-dealeasy-api-key": env.DEALEASY_API_KEY,
             "x-shopify-domain": env.DEALEASY_SHOP_DOMAIN,
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            productId: product.id,
+            variantId: product.variantId,
+            collections: product.collections,
+            tags: product.tags,
+            customer,
+          }),
           signal: AbortSignal.timeout(3000),
         });
         const body = await response.json();
         if (!response.ok) {
           console.error(`Dealeasy ${response.status} ${body.code}: ${body.message}`);
-          return NONE;
+          return [];
         }
-        return body;
+        return body.campaigns.filter((c: Campaign) => c.type === "VOLUME_DISCOUNT");
       } catch (error) {
         console.error("Dealeasy request failed", error);
-        return NONE;
+        return [];
       }
     }
     ```
@@ -104,7 +98,7 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
     ```tsx app/routes/products.$handle.tsx
     import { useLoaderData } from "react-router";
     import type { Route } from "./+types/products.$handle";
-    import { getVolumeDiscounts, toNumericId, toShopifyLocale } from "~/lib/dealeasy.server";
+    import { getProductCampaigns } from "~/lib/dealeasy.server";
 
     export async function loader({ params, context }: Route.LoaderArgs) {
       const { storefront, env } = context;
@@ -113,36 +107,44 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
       });
       if (!product) throw new Response(null, { status: 404 });
 
-      const variant = product.selectedOrFirstAvailableVariant;
-      const volumeDiscounts = await getVolumeDiscounts(env, {
-        productId: toNumericId(product.id),
-        variantId: variant ? toNumericId(variant.id) : undefined,
-        country: storefront.i18n.country, // e.g. "US", same as Shopify.country
-        locale: toShopifyLocale(storefront.i18n.language), // e.g. "en", same as Shopify.locale
-      });
+      const campaigns = await getProductCampaigns(
+        env,
+        {
+          id: product.id,
+          variantId: product.selectedOrFirstAvailableVariant?.id,
+          collections: product.collections.nodes.map((c: { id: string }) => c.id),
+          tags: product.tags,
+        },
+        await getBuyer(context), // undefined for guests
+      );
 
-      return { product, volumeDiscounts };
+      return { product, campaigns };
+    }
+
+    // Replace with your own customer lookup (for example, the Customer Account API).
+    async function getBuyer(context: Route.LoaderArgs["context"]) {
+      if (!(await context.customerAccount.isLoggedIn())) return undefined;
+      // return { id: customer.id, isB2b: Boolean(companyLocationId), tags: customerTags };
+      return undefined;
     }
 
     export default function Product() {
-      const { product, volumeDiscounts } = useLoaderData<typeof loader>();
-      const discount = volumeDiscounts.volumeDiscounts[0]; // best discount first
+      const { product, campaigns } = useLoaderData<typeof loader>();
+      const campaign = campaigns[0]; // best campaign first
 
       return (
         <div>
           <h1>{product.title}</h1>
-          {discount && (
+          {campaign && (
             <ul>
-              {discount.discountTiers.map((tier) => (
+              {campaign.tiers.map((tier) => (
                 <li key={tier.id} data-default={tier.isDefault}>
                   Buy {tier.quantity}
-                  {discount.fixedQuantityDiscount ? "" : "+"}, save{" "}
-                  {discount.discountType === "PERCENTAGE"
+                  {campaign.quantityType === "RANGE" ? "+" : ""}, save{" "}
+                  {campaign.discountType === "PERCENTAGE"
                     ? `${tier.value}%`
-                    : `${tier.value} ${discount.currencyCode}`}{" "}
+                    : `${tier.value} ${campaign.currencyCode}`}{" "}
                   each
-                  {tier.highlight === "MOST_POPULAR" && <strong> Most popular</strong>}
-                  {tier.highlight === "BEST_SAVINGS" && <strong> Best savings</strong>}
                 </li>
               ))}
             </ul>
@@ -152,11 +154,12 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
     }
 
     const PRODUCT_QUERY = `#graphql
-      query Product($handle: String!, $country: CountryCode, $language: LanguageCode)
-      @inContext(country: $country, language: $language) {
+      query Product($handle: String!) {
         product(handle: $handle) {
           id
           title
+          tags
+          collections(first: 250) { nodes { id } }
           selectedOrFirstAvailableVariant { id }
         }
       }
@@ -167,87 +170,67 @@ DEALEASY_SHOP_DOMAIN=your-store.myshopify.com
   </Tab>
   <Tab title="Next.js (App Router)">
     ```ts lib/dealeasy.ts
-    import "server-only"; // fails the build if this is imported into client code
-
     const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
 
-    // Accepts Storefront API GIDs or numeric IDs and always sends numeric IDs
-    const toNumericId = (id: string) => id.split("/").pop()!;
+    type ProductInput = { id: string; variantId?: string; collections?: string[]; tags?: string[] };
+    type Buyer = { id?: string; isB2b?: boolean; tags?: string[] };
 
-    export async function getVolumeDiscounts(
-      productId: string,
-      variantId?: string,
-      context?: { country?: string; locale?: string }, // e.g. { country: "US", locale: "en" }
-    ) {
-      const params = new URLSearchParams({ productId: toNumericId(productId) });
-      if (variantId) params.set("variantId", toNumericId(variantId));
-      if (context?.country) params.set("country", context.country);
-      if (context?.locale) params.set("locale", context.locale);
-
+    export async function getProductCampaigns(product: ProductInput, customer?: Buyer) {
       try {
-        const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
+        const response = await fetch(`${DEALEASY_API_URL}/campaigns/products/search`, {
+          method: "POST",
           headers: {
             "x-dealeasy-api-key": process.env.DEALEASY_API_KEY!,
             "x-shopify-domain": process.env.DEALEASY_SHOP_DOMAIN!,
+            "Content-Type": "application/json",
           },
-          next: { revalidate: 300 }, // cache for 5 minutes per product
+          body: JSON.stringify({
+            productId: product.id,
+            variantId: product.variantId,
+            collections: product.collections,
+            tags: product.tags,
+            customer,
+          }),
+          cache: "no-store",
         });
         const body = await response.json();
         if (!response.ok) throw new Error(`${body.code}: ${body.message}`);
-        return body as { eligible: boolean; volumeDiscounts: any[] };
+        return body.campaigns.filter((c: { type: string }) => c.type === "VOLUME_DISCOUNT");
       } catch (error) {
         console.error("Dealeasy request failed", error);
-        return { eligible: false, volumeDiscounts: [] };
+        return [];
       }
     }
     ```
 
     ```tsx app/products/[handle]/page.tsx
-    import { getVolumeDiscounts } from "@/lib/dealeasy";
-    import { getProduct } from "@/lib/shopify"; // your Storefront API helper
+    import { getProductCampaigns } from "@/lib/dealeasy";
+    import { getProduct } from "@/lib/shopify"; // your Storefront API helper (include tags and collections)
 
     export default async function ProductPage({ params }: { params: Promise<{ handle: string }> }) {
       const { handle } = await params;
       const product = await getProduct(handle);
-      const { volumeDiscounts } = await getVolumeDiscounts(product.id, product.variants[0]?.id, {
-        country: "US", // the buyer's market, e.g. from your i18n routing
-        locale: "en",
+
+      const campaigns = await getProductCampaigns({
+        id: product.id,
+        variantId: product.variants[0]?.id,
+        collections: product.collections.map((c: { id: string }) => c.id),
+        tags: product.tags,
       });
 
-      return <VolumeDiscountTiers discount={volumeDiscounts[0]} />;
-    }
-    ```
-
-    If a **client** component needs to refetch when the buyer picks another variant, add a route handler that proxies the call. Let the client send only `productId` and `variantId`. The shop domain and key stay on the server:
-
-    ```ts app/api/volume-discounts/route.ts
-    import { getVolumeDiscounts } from "@/lib/dealeasy";
-
-    export async function GET(request: Request) {
-      const { searchParams } = new URL(request.url);
-      const productId = searchParams.get("productId");
-      if (!productId) return Response.json({ error: "productId is required" }, { status: 400 });
-
-      return Response.json(await getVolumeDiscounts(productId, searchParams.get("variantId") ?? undefined));
+      return <VolumeDiscountTiers campaign={campaigns[0]} />;
     }
     ```
   </Tab>
 </Tabs>
 
-## Country and locale
+## Caching instead of calling per view
 
-On the Online Store, `country` and `locale` come from `Shopify.country` and `Shopify.locale`. Headless storefronts don't have those globals, so send the same values from your own localization:
+On busy storefronts, you can call [List product campaigns](/campaigns/list-product-campaigns) every few minutes, cache the result, and match campaigns on each product view yourself. See [Matching campaigns yourself](/campaigns/list-product-campaigns#matching-campaigns-yourself).
 
-| Parameter | Online Store | Hydrogen | Storefront API `localization` |
-| --- | --- | --- | --- |
-| `country` | `Shopify.country` → `US` | `storefront.i18n.country` → `US` | `country.isoCode` → `US` |
-| `locale` | `Shopify.locale` → `en`, `pt-BR` | `storefront.i18n.language` → `EN`, `PT_BR` (convert) | `language.isoCode` → `EN`, `PT_BR` (convert) |
+## Apply code campaigns
 
-Shopify's GraphQL language codes use upper case and an underscore (`PT_BR`), but `Shopify.locale` uses lower case and a hyphen (`pt-BR`). Convert them with `toShopifyLocale` from the Hydrogen example above.
-
-## Apply code discounts
-
-When `method` is `CODE_DISCOUNT`, the discount only applies once the code is on the cart. You can add it with the Storefront API:
+When `method` is `CODE`, the discount only applies once the code is on the cart. You can add it with the Storefront API:
 
 ```graphql
 mutation ApplyDiscount($cartId: ID!, $codes: [String!]!) {
@@ -258,10 +241,10 @@ mutation ApplyDiscount($cartId: ID!, $codes: [String!]!) {
 }
 ```
 
-Pass `discountCode` in `codes`. `applicable` becomes `true` once the cart quantity reaches a tier.
+Pass `code` in `codes`. `applicable` becomes `true` once the cart quantity reaches a tier.
 
 ## Tips
 
-- **Refetch on variant change** if the store uses variant-targeted discounts, or fetch for every variant up front.
-- **Cache per product** on your server for a few minutes.
-- **Currency:** tier `value` for `FIXED_AMOUNT` is in the store currency. Convert it the same way you convert product prices when you show other currencies.
+- **Refetch when the variant changes** if the store has campaigns that target specific variants.
+- **Send all collections.** Campaigns that target or exclude collections only match on the collection IDs you send. `collections(first: 250)` covers the 250-item limit of the request body.
+- **Currency:** for `FIXED_AMOUNT`, the tier `value` is in the store currency. Convert it the same way you convert product prices when you show other currencies.

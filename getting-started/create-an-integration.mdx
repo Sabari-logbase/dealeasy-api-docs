@@ -25,11 +25,11 @@ Only the merchant, or a staff member with access to Dealeasy, can create an inte
     Give it a name that identifies the system using it, such as `Hydrogen storefront (production)`.
   </Step>
   <Step title="Select scopes">
-    Scopes control which endpoints the key can call. Select `read_volume_discounts`.
+    Scopes control which endpoints the key can call. Select `read_campaigns`.
 
     | Scope | Grants access to |
     | --- | --- |
-    | `read_volume_discounts` | [`GET /volume-discounts`](/volume-discounts/get-volume-discounts) |
+    | `read_campaigns` | [`GET /campaigns/products`](/campaigns/list-product-campaigns), [`POST /campaigns/products/search`](/campaigns/get-specific-product-campaigns) |
 
     A request to an endpoint without its scope returns [`FORBIDDEN`](/errors/error-codes#forbidden).
   </Step>

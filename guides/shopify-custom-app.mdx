@@ -1,18 +1,18 @@
 ---
 title: "Shopify custom app"
-description: "Read Dealeasy volume discounts from a custom Shopify app or backend service."
+description: "Read Dealeasy campaigns from a custom Shopify app or backend service."
 ---
 
-Use this guide when you have your own Shopify app or backend that needs a store's volume discount data. For example:
+Use this guide when you have your own Shopify app or backend that needs a store's campaigns. For example:
 
 - a theme app extension or app proxy that renders its own quantity selector
 - a Checkout UI extension that shows "add 1 more to save 10%"
-- an internal service that syncs discount tiers to a PIM, ERP, or marketplace feed
+- an internal service that syncs campaigns to a PIM, ERP, or marketplace feed
 
 ## Prerequisites
 
-- An integration of type `SHOPIFY_CUSTOM_APP` with the `read_volume_discounts` scope, created by the merchant. See [Create an integration](/getting-started/create-an-integration).
-- The key stored as a server secret. If your app serves several stores, store **one key per store**, keyed by the `myshopify.com` domain.
+- An integration of type `SHOPIFY_CUSTOM_APP` with the `read_campaigns` scope, created by the merchant. See [Create an integration](/getting-started/create-an-integration).
+- The key stored as a secret. If your app serves several stores, store **one key per store**, keyed by the `myshopify.com` domain.
 
 ## Steps
 
@@ -21,44 +21,39 @@ Use this guide when you have your own Shopify app or backend that needs a store'
     Save each store's key as an encrypted secret, keyed by its `myshopify.com` domain.
   </Step>
   <Step title="Call Dealeasy from your backend">
-    Send the key and the matching `x-shopify-domain` header.
+    Send the key and the matching `x-shopify-domain` header. Use [Get specific product campaigns](/campaigns/get-specific-product-campaigns) for one product, or [List product campaigns](/campaigns/list-product-campaigns) to sync everything.
   </Step>
   <Step title="Expose only what your frontend needs">
-    Return the discount data from your own authenticated endpoint. For an app proxy, verify Shopify's proxy signature first.
+    Return the campaign data from your own endpoint. For an app proxy, verify Shopify's proxy signature first.
   </Step>
 </Steps>
 
-## Server-side example (Node.js + Express)
+## Backend example (Node.js + Express)
 
-This backend endpoint is exposed to a storefront through a [Shopify app proxy](https://shopify.dev/docs/apps/build/online-store/app-proxies). It looks up the store's Dealeasy key, calls the API, and caches the result briefly.
+This endpoint is exposed to the storefront through a [Shopify app proxy](https://shopify.dev/docs/apps/build/online-store/app-proxies). It forwards the product and buyer to [Get specific product campaigns](/campaigns/get-specific-product-campaigns) and returns the campaigns that apply.
 
-```javascript server/volume-discounts.js
+```javascript server/campaigns.js
 import express from "express";
 
 const DEALEASY_API_URL = "https://api.dealeasy.app/api/public/v1";
-const CACHE_TTL_MS = 2 * 60 * 1000;
-const cache = new Map();
 
 // Replace with your own encrypted secret storage.
 async function getDealeasyKey(shop) {
   return process.env[`DEALEASY_API_KEY_${shop.replace(/\W/g, "_").toUpperCase()}`];
 }
 
-async function getVolumeDiscounts(shop, { productId, variantId, country, locale }) {
-  const cacheKey = [shop, productId, variantId, country, locale].join(":");
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.body;
-
+async function getProductCampaigns(shop, payload) {
   const apiKey = await getDealeasyKey(shop);
   if (!apiKey) throw new Error(`No Dealeasy integration configured for ${shop}`);
 
-  const params = new URLSearchParams({ productId }); // numeric IDs only
-  if (variantId) params.set("variantId", variantId);
-  if (country) params.set("country", country); // Shopify.country, e.g. "US"
-  if (locale) params.set("locale", locale); // Shopify.locale, e.g. "en"
-
-  const response = await fetch(`${DEALEASY_API_URL}/volume-discounts?${params}`, {
-    headers: { "x-dealeasy-api-key": apiKey, "x-shopify-domain": shop },
+  const response = await fetch(`${DEALEASY_API_URL}/campaigns/products/search`, {
+    method: "POST",
+    headers: {
+      "x-dealeasy-api-key": apiKey,
+      "x-shopify-domain": shop,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload), // { productId, variantId, collections, tags, customer }
     signal: AbortSignal.timeout(5000),
   });
   const body = await response.json();
@@ -68,77 +63,98 @@ async function getVolumeDiscounts(shop, { productId, variantId, country, locale 
     error.status = response.status;
     throw error;
   }
-
-  cache.set(cacheKey, { body, expiresAt: Date.now() + CACHE_TTL_MS });
-  return body;
+  return body.campaigns;
 }
 
 const router = express.Router();
+router.use(express.json());
 
-// GET /apps/your-proxy/volume-discounts?productId=...&variantId=...&country=...&locale=...
+// POST /apps/your-proxy/campaigns/search
 // verifyAppProxySignature is your middleware that checks Shopify's app proxy HMAC.
-router.get("/volume-discounts", verifyAppProxySignature, async (req, res) => {
+router.post("/campaigns/search", verifyAppProxySignature, async (req, res) => {
   const shop = req.query.shop; // set by Shopify on app proxy requests
-  const { productId, variantId, country, locale } = req.query;
+  const { productId, variantId, collections, tags, customer } = req.body;
   if (!productId) return res.status(400).json({ error: "productId is required" });
 
   try {
-    res.json(await getVolumeDiscounts(shop, { productId, variantId, country, locale }));
+    const campaigns = await getProductCampaigns(shop, {
+      productId,
+      variantId,
+      collections,
+      tags,
+      customer,
+    });
+    res.json({ campaigns });
   } catch (error) {
     console.error(`Dealeasy ${error.status ?? ""} ${error.code ?? error.message}`); // never log the key
-    res.json({ eligible: false, volumeDiscounts: [] }); // degrade gracefully
+    res.json({ campaigns: [] }); // degrade gracefully
   }
 });
 
 export default router;
 ```
 
+<Tip>
+  Shopify adds `logged_in_customer_id` to app proxy requests. For extra safety, use it as `customer.id` instead of the ID the browser sends.
+</Tip>
+
 ## Call it from the theme
 
-On a product page, your theme app extension already has every value the API needs. It takes the numeric IDs from Liquid and `country` and `locale` from `Shopify.country` and `Shopify.locale`:
+On a product page, your theme app extension already has every value the API needs in Liquid:
 
-```liquid blocks/volume-discounts.liquid
-<div id="volume-discounts"></div>
+```liquid blocks/campaigns.liquid
+<div id="dealeasy-campaigns"></div>
 <script>
   (async () => {
-    const params = new URLSearchParams({
+    const payload = {
       productId: "{{ product.id }}",
       variantId: "{{ product.selected_or_first_available_variant.id }}",
-      country: Shopify.country, // e.g. "US"
-      locale: Shopify.locale,   // e.g. "en"
+      collections: {{ product.collections | map: 'id' | json }},
+      tags: {{ product.tags | json }},
+      {% if customer %}
+      customer: {
+        id: "{{ customer.id }}",
+        isB2b: {{ customer.b2b? | json }},
+        tags: {{ customer.tags | json }},
+      },
+      {% endif %}
+    };
+
+    const response = await fetch("/apps/your-proxy/campaigns/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
-    const response = await fetch(`/apps/your-proxy/volume-discounts?${params}`);
-    const { eligible, volumeDiscounts } = await response.json();
-    if (eligible) {
-      // render volumeDiscounts[0].discountTiers into #volume-discounts
+    const { campaigns } = await response.json();
+    const campaign = campaigns.find((c) => c.type === "VOLUME_DISCOUNT");
+    if (campaign) {
+      // render campaign.tiers into #dealeasy-campaigns
     }
   })();
 </script>
 ```
 
-If the buyer changes variant, request again with the new numeric variant ID.
+If the buyer changes variant, call it again with the new variant ID.
 
 ## Test with cURL
 
 Before wiring it into your app, check the key and domain from your terminal:
 
 ```bash
-curl --get "https://api.dealeasy.app/api/public/v1/volume-discounts" \
-  --data-urlencode "productId=8012345678901" \
-  --data-urlencode "variantId=44012345678901" \
-  --data-urlencode "country=US" \
-  --data-urlencode "locale=en" \
+curl -X POST "https://api.dealeasy.app/api/public/v1/campaigns/products/search" \
   -H "x-dealeasy-api-key: $DEALEASY_API_KEY" \
-  -H "x-shopify-domain: your-store.myshopify.com"
+  -H "x-shopify-domain: your-store.myshopify.com" \
+  -H "Content-Type: application/json" \
+  -d '{ "productId": "8012345678901", "variantId": "44012345678901", "collections": ["411234567890"], "tags": ["summer"] }'
 ```
 
-A `200` response with `eligible: false` means the key works but no volume discount applies to that product. See [which discounts are returned](/volume-discounts/overview#which-discounts-are-returned).
+A `200` response with `"campaigns": []` means the key works, but no campaign applies to that product and buyer. See [how a campaign is matched](/campaigns/overview#how-a-campaign-is-matched).
 
 ## Using the data
 
-- **Next-tier nudges:** compare the cart quantity with `discountTiers` to show "Add 2 more to save 15%". Use `applicationStrategy` to decide whether to count per product, across all products, or per cart line.
-- **Syncing to other systems:** store `discountId`, not the tier `id`, as your stable reference. Tier IDs are positional.
-- **Code discounts:** when `method` is `CODE_DISCOUNT`, show or apply `discountCode`. Automatic discounts need no action.
+- **Next-tier nudges:** compare the cart quantity with `tiers` to show "Add 2 more to save 15%". Use `quantityScope` to decide whether to count per product, per variant, or across all products.
+- **Syncing to other systems:** use [List product campaigns](/campaigns/list-product-campaigns). Store the campaign `id`, not the tier `id`, because tier IDs are positional.
+- **Code campaigns:** when `method` is `CODE`, show or apply `code`. `AUTOMATIC` campaigns need no action.
 
 ## Operational checklist
 
@@ -147,7 +163,7 @@ A `200` response with `eligible: false` means the key works but no volume discou
     Create a new integration, deploy the new key, then revoke the old integration. See [Rotate or revoke a key](/getting-started/create-an-integration#rotate-or-revoke-a-key).
   </Accordion>
   <Accordion title="Merchant uninstalls Dealeasy or revokes the key">
-    Requests return `UNAUTHORIZED`. Stop showing volume discount messaging for that store and alert whoever manages the integration.
+    Requests return `UNAUTHORIZED`. Stop showing campaign messaging for that store and alert whoever manages the integration.
   </Accordion>
   <Accordion title="Rate limits">
     Cache responses and retry `TOO_MANY_REQUESTS` with exponential backoff. Don't call the API in a tight loop for every product. Fetch on demand and cache instead.
