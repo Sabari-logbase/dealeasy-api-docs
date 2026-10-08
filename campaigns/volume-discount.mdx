@@ -1,0 +1,112 @@
+---
+title: "Volume discount"
+description: "Structure of VOLUME_DISCOUNT campaigns: tiered quantity discounts."
+---
+
+A **volume discount** rewards buying more units of a product. The merchant defines **tiers**, and each tier has a quantity and a discount:
+
+| Buy | Save |
+| --- | --- |
+| 2 or more | 5% off each item |
+| 3 or more | 10% off each item |
+| 5 or more | 15% off each item |
+
+Volume discounts have `type: "VOLUME_DISCOUNT"`. Filter for them on [Get all product campaigns](/campaigns/get-all-product-campaigns) with `?type=VOLUME_DISCOUNT`.
+
+```json Example (from Get all product campaigns)
+{
+  "id": "gid://shopify/DiscountAutomaticNode/1234567890",
+  "type": "VOLUME_DISCOUNT",
+  "title": "Buy more, save more",
+  "method": "AUTOMATIC",
+  "code": null,
+  "combinesWith": { "productDiscounts": false, "orderDiscounts": true, "shippingDiscounts": true },
+  "startsAt": "2026-09-01T00:00:00Z",
+  "endsAt": null,
+  "trigger": { "type": "COLLECTIONS", "items": ["gid://shopify/Collection/411234567890"] },
+  "excludes": { "type": "TAGS", "items": ["clearance"] },
+  "customerEligibility": { "type": "ALL", "items": [], "b2b": true },
+  "discountType": "PERCENTAGE",
+  "quantityType": "RANGE",
+  "quantityScope": "PER_PRODUCT",
+  "appliesToSubscriptions": false,
+  "currencyCode": "USD",
+  "tiers": [
+    { "id": "tier-1", "quantity": 2, "value": 5, "isDefault": false },
+    { "id": "tier-2", "quantity": 3, "value": 10, "isDefault": true }
+  ]
+}
+```
+
+[Get campaigns for a specific product](/campaigns/get-campaigns-for-a-specific-product) returns the same object without `trigger`, `excludes` and `customerEligibility`.
+
+## Common fields
+
+`id`, `type`, `title`, `method`, `code`, `combinesWith`, `startsAt` and `endsAt` work the same for every campaign. See [Fields every campaign has](/campaigns/overview#fields-every-campaign-has).
+
+The rule fields `trigger`, `excludes` and `customerEligibility` are described in [Rule fields](/campaigns/overview#rule-fields-get-all-product-campaigns-only). Volume discounts support every `trigger.type`: `ALL`, `PRODUCTS`, `VARIANTS`, `COLLECTIONS` and `TAGS`.
+
+## Volume discount fields
+
+<ResponseField name="discountType" type="enum<string>" required>
+  `PERCENTAGE` or `FIXED_AMOUNT`. Controls how each tier's `value` is read. See [tier values](#tier-values).
+</ResponseField>
+
+<ResponseField name="quantityType" type="enum<string>" required>
+  `RANGE`: a tier applies at its `quantity` **or more**, and the highest qualifying tier wins.
+  `FIXED`: a tier applies only at **exactly** its `quantity`. Quantities between tiers get no discount.
+</ResponseField>
+
+<ResponseField name="quantityScope" type="enum<string>" required>
+  How cart quantities are counted toward a tier:
+
+  | Value | Counted | Example: 2 × Product A (red), 1 × Product A (blue), 1 × Product B |
+  | --- | --- | --- |
+  | `PER_PRODUCT` | Per product | A counts 3, B counts 1 |
+  | `PER_VARIANT` | Per variant (cart line) | A red counts 2, A blue 1, B 1 |
+  | `ALL_PRODUCTS` | Across all qualifying products | 4 in total |
+</ResponseField>
+
+<ResponseField name="appliesToSubscriptions" type="boolean" required>
+  `true` if the discount also applies when the product is bought as a subscription.
+</ResponseField>
+
+<ResponseField name="currencyCode" type="string" required>
+  The store currency (ISO 4217), such as `USD`. `FIXED_AMOUNT` values are in this currency.
+</ResponseField>
+
+<ResponseField name="tiers" type="Tier[]" required>
+  The tiers, in ascending order of `quantity`.
+
+  <Expandable title="Tier">
+    <ResponseField name="id" type="string" required>
+      Identifies the tier within the campaign: `tier-1`, `tier-2`, … in order. Use it as a UI key. Don't store it, because it changes if the merchant edits the tiers.
+    </ResponseField>
+    <ResponseField name="quantity" type="integer" required>
+      The quantity that unlocks the tier. See `quantityType`.
+    </ResponseField>
+    <ResponseField name="value" type="number" required>
+      The discount per item. See [tier values](#tier-values).
+    </ResponseField>
+    <ResponseField name="isDefault" type="boolean" required>
+      `true` for the tier to preselect in a quantity selector. At most one tier is `true`, and there may be none. If none is set, preselect the first tier or quantity 1.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Tier values
+
+`value` is always the discount **per item**:
+
+| `discountType` | `value` means | Example | Price per item on a 20.00 USD product |
+| --- | --- | --- | --- |
+| `PERCENTAGE` | Percent off each item, from 0 to 100 | `10` | 20.00 − 10% = **18.00** |
+| `FIXED_AMOUNT` | Amount off each item, in `currencyCode` | `2.5` | 20.00 − 2.50 = **17.50** |
+
+<Note>
+  `FIXED_AMOUNT` values are in the **store's** currency (`currencyCode`). If you show prices in another currency, convert `value` with the same exchange rate you use for product prices. At checkout, Shopify converts the discount to the buyer's currency itself.
+</Note>
+
+<Info>
+  These values show what Shopify will apply at checkout. The final cart total can still differ, for example when discounts are combined (`combinesWith`). Checkout is always the source of truth.
+</Info>

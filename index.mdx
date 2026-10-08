@@ -3,7 +3,7 @@ title: "Overview"
 description: "Use the Dealeasy API to show a merchant's discount campaigns in your own storefront or app."
 ---
 
-The Dealeasy API gives you read-only access to the **campaigns** a merchant runs with the Dealeasy Shopify app. Today that means **volume discounts**: tiered quantity discounts such as "Buy 3, save 10%". For any product and buyer, you can get the campaigns that apply and show them in your own UI.
+The Dealeasy API gives you read-only access to the **campaigns** a merchant runs with the Dealeasy Shopify app. Today it covers **product-based campaigns**: [volume discounts](/campaigns/volume-discount) such as "Buy 3, save 10%" and [BOGO](/campaigns/bogo) offers such as "Buy 1, get 1 free". For any product and buyer, you can get the campaigns that apply and show them in your own UI. More campaign types and categories are coming; see the [campaigns overview](/campaigns/overview).
 
 Shopify still applies the discounts at checkout. The API tells you what to display. It doesn't change prices or carts.
 
@@ -30,7 +30,7 @@ If the merchant uses a standard Online Store theme, the Dealeasy theme widgets a
     Send the API key and the store's `myshopify.com` domain as headers. See [Authentication](/getting-started/authentication).
   </Step>
   <Step title="You render the campaigns">
-    Send a product and the buyer to [Get specific product campaigns](/campaigns/get-specific-product-campaigns), and render the tiers you get back.
+    Send a product and the buyer to [Get campaigns for a specific product](/campaigns/get-campaigns-for-a-specific-product), and render each campaign by its `type`.
   </Step>
 </Steps>
 
@@ -78,8 +78,8 @@ curl -X POST "https://api.dealeasy.app/api/public/v1/campaigns/products/search" 
 
 | Method | Path | Use it to |
 | --- | --- | --- |
-| `GET` | [`/campaigns/products`](/campaigns/list-product-campaigns) | List every active and scheduled product campaign with its rules. |
-| `POST` | [`/campaigns/products/search`](/campaigns/get-specific-product-campaigns) | Get the active campaigns that apply to one product and buyer. |
+| `GET` | [`/campaigns/products`](/campaigns/get-all-product-campaigns) | List every active and scheduled product campaign with its rules. |
+| `POST` | [`/campaigns/products/search`](/campaigns/get-campaigns-for-a-specific-product) | Get the active campaigns that apply to one product and buyer. |
 
 ## Base URL
 

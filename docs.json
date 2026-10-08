@@ -41,9 +41,17 @@
         "group": "Campaigns",
         "pages": [
           "campaigns/overview",
-          "campaigns/list-product-campaigns",
-          "campaigns/get-specific-product-campaigns",
-          "campaigns/campaign-object"
+          {
+            "group": "Product campaigns",
+            "expanded": true,
+            "pages": [
+              "campaigns/get-all-product-campaigns",
+              "campaigns/get-campaigns-for-a-specific-product",
+              "campaigns/volume-discount",
+              "campaigns/bogo",
+              "campaigns/gift-with-product"
+            ]
+          }
         ]
       },
       {

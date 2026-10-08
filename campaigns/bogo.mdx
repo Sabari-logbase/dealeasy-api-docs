@@ -1,0 +1,79 @@
+---
+title: "BOGO"
+description: "Structure of BOGO_DISCOUNT campaigns: buy X, get Y free."
+---
+
+A **BOGO** (buy X, get Y) campaign gives the buyer free items when they buy a set quantity. For example, "Buy 1 cookie box, get 1 free" or "Buy 2, get 1 free".
+
+BOGO campaigns have `type: "BOGO_DISCOUNT"`. Filter for them on [Get all product campaigns](/campaigns/get-all-product-campaigns) with `?type=BOGO_DISCOUNT`.
+
+```json Example (from Get all product campaigns)
+{
+  "id": "gid://shopify/DiscountAutomaticNode/5678901234",
+  "type": "BOGO_DISCOUNT",
+  "title": "Buy 1 cookie box, get 1 free",
+  "method": "AUTOMATIC",
+  "code": null,
+  "combinesWith": { "productDiscounts": false, "orderDiscounts": true, "shippingDiscounts": true },
+  "startsAt": "2026-10-01T00:00:00Z",
+  "endsAt": "2026-10-31T23:59:59Z",
+  "trigger": { "type": "PRODUCTS", "items": ["gid://shopify/Product/8012345678901"] },
+  "excludes": null,
+  "customerEligibility": { "type": "ALL", "items": [], "b2b": false },
+  "rewardStrategy": "SAME_PRODUCT",
+  "maxUsesPerOrder": 2,
+  "tiers": [
+    { "id": "tier-1", "buyQuantity": 1, "getQuantity": 1 }
+  ]
+}
+```
+
+[Get campaigns for a specific product](/campaigns/get-campaigns-for-a-specific-product) returns the same object without `trigger`, `excludes` and `customerEligibility`.
+
+## Common fields
+
+`id`, `type`, `title`, `method`, `code`, `combinesWith`, `startsAt` and `endsAt` work the same for every campaign. See [Fields every campaign has](/campaigns/overview#fields-every-campaign-has).
+
+The rule fields `trigger`, `excludes` and `customerEligibility` are described in [Rule fields](/campaigns/overview#rule-fields-get-all-product-campaigns-only). BOGO campaigns support these `trigger.type` values: `ALL`, `PRODUCTS` and `COLLECTIONS`.
+
+## BOGO fields
+
+<ResponseField name="rewardStrategy" type="enum<string>" required>
+  Which items can be the free ones:
+
+  | Value | Meaning | Example |
+  | --- | --- | --- |
+  | `SAME_PRODUCT` | The free items must be the **same product** as the items bought. | Buy 1 Vanilla Cookie Box, get 1 Vanilla Cookie Box free. |
+  | `ANY_ELIGIBLE` | The free items can be **any product** the campaign applies to. | Buy 1 Cookie Box, get another Cookie Box of any flavour free. |
+</ResponseField>
+
+<ResponseField name="maxUsesPerOrder" type="integer | null" required>
+  The most times the offer can be applied in one order. For example, with "Buy 1, get 1" and `maxUsesPerOrder: 2`, a buyer gets at most 2 free items. `null` means there is no limit. With `SAME_PRODUCT`, the limit applies to each product separately.
+</ResponseField>
+
+<ResponseField name="tiers" type="Tier[]" required>
+  The buy X, get Y tiers. Most campaigns have one tier.
+
+  <Expandable title="Tier">
+    <ResponseField name="id" type="string" required>
+      Identifies the tier within the campaign: `tier-1`, `tier-2`, … in order. Use it as a UI key. Don't store it, because it changes if the merchant edits the tiers.
+    </ResponseField>
+    <ResponseField name="buyQuantity" type="integer" required>
+      How many items the buyer pays for.
+    </ResponseField>
+    <ResponseField name="getQuantity" type="integer" required>
+      How many items the buyer then gets for free.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## How the reward works
+
+- **The "get" items are always free** (100% off).
+- **The cheapest qualifying items are the free ones.** With `ANY_ELIGIBLE`, if the buyer adds a 10.00 box and an 8.00 box to a "Buy 1, get 1" campaign, the 8.00 box is free.
+- **Each use needs `buyQuantity + getQuantity` items in the cart.** For "Buy 1, get 1", 2 items give one free item, and 4 items give two (up to `maxUsesPerOrder`).
+- **With several tiers**, the tier with the largest `buyQuantity` is applied first, as many times as the cart allows. Leftover items then count toward smaller tiers.
+
+<Info>
+  The cart must contain the free items for the discount to apply. Shopify doesn't add them automatically. Checkout is always the source of truth.
+</Info>

@@ -1,12 +1,10 @@
 ---
-title: "Get specific product campaigns"
+title: "Get campaigns for a specific product"
 description: "Search for the campaigns that apply right now to a product and buyer."
 openapi: "POST /campaigns/products/search"
 ---
 
-Send the product, its variant, collections and tags, and the buyer in the request body. Dealeasy returns only the **active** campaigns that apply to that product and buyer: scheduled and expired campaigns are never included. It checks each campaign's targeting, exclusions and customer rules against the payload you send, and returns the matches **best first** (by the value of the highest tier). If nothing applies, `campaigns` is an empty array.
-
-If you only show one campaign, use `campaigns[0]`. Only `productId` is required, and each array accepts up to 250 items.
+Send the product, its variant, collections and tags, and the buyer in the request body. Dealeasy returns only the **active** campaigns that apply to that product and buyer, of every supported type: scheduled and expired campaigns are never included. It checks each campaign's targeting, exclusions and customer rules against the payload you send. If nothing applies, `campaigns` is an empty array.
 
 <Info>
   This endpoint uses `POST` only because the product and buyer details are sent as a JSON body. It is a read-only search: it never creates or changes a campaign.
@@ -29,6 +27,17 @@ All of these values are available from Liquid (Online Store) or the Storefront G
   | `customer.isB2b` | `{{ customer.b2b? }}` | `true` when the buyer has a company location |
   | `customer.tags` | `{{ customer.tags \| json }}` | Your customer data |
 </Accordion>
+
+## Response
+
+The response is `{ "campaigns": [...] }`, **newest first** (latest `startsAt` first). Each campaign has the [fields every campaign has](/campaigns/overview#fields-every-campaign-has) and the fields of its `type`:
+
+| `type` | Structure |
+| --- | --- |
+| `VOLUME_DISCOUNT` | [Volume discount](/campaigns/volume-discount) |
+| `BOGO_DISCOUNT` | [BOGO](/campaigns/bogo) |
+
+The rule fields (`trigger`, `excludes` and `customerEligibility`) are left out, because they have already been applied. Skip campaigns with a `type` you don't support, and decide yourself which campaign to show when several apply.
 
 ## Examples
 
@@ -71,7 +80,8 @@ const response = await fetch(
 const body = await response.json();
 if (!response.ok) throw new Error(`Dealeasy API error ${response.status}: ${body.code}`);
 
-const volumeDiscounts = body.campaigns.filter((c) => c.type === "VOLUME_DISCOUNT");
+const volumeDiscount = body.campaigns.find((c) => c.type === "VOLUME_DISCOUNT");
+const bogo = body.campaigns.find((c) => c.type === "BOGO_DISCOUNT");
 ```
 
 ```javascript Node.js (reusable client)
@@ -101,5 +111,3 @@ export async function getProductCampaigns({ shop, productId, variantId, collecti
 ```
 
 </CodeGroup>
-
-The response contains each campaign without `trigger`, `excludes` and `customerEligibility`, because those rules have already been applied. See the [campaign object](/campaigns/campaign-object) for every field.

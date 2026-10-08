@@ -5,9 +5,8 @@ description: "Read Dealeasy campaigns from a custom Shopify app or backend servi
 
 Use this guide when you have your own Shopify app or backend that needs a store's campaigns. For example:
 
-- a theme app extension or app proxy that renders its own quantity selector
+- a theme app extension or app proxy that renders its own quantity selector or "Buy 1, get 1 free" badge
 - a Checkout UI extension that shows "add 1 more to save 10%"
-- an internal service that syncs campaigns to a PIM, ERP, or marketplace feed
 
 ## Prerequisites
 
@@ -21,7 +20,7 @@ Use this guide when you have your own Shopify app or backend that needs a store'
     Save each store's key as an encrypted secret, keyed by its `myshopify.com` domain.
   </Step>
   <Step title="Call Dealeasy from your backend">
-    Send the key and the matching `x-shopify-domain` header. Use [Get specific product campaigns](/campaigns/get-specific-product-campaigns) for one product, or [List product campaigns](/campaigns/list-product-campaigns) to sync everything.
+    Send the key and the matching `x-shopify-domain` header. Use [Get campaigns for a specific product](/campaigns/get-campaigns-for-a-specific-product) for one product, or [Get all product campaigns](/campaigns/get-all-product-campaigns) to cache every campaign and match them yourself.
   </Step>
   <Step title="Expose only what your frontend needs">
     Return the campaign data from your own endpoint. For an app proxy, verify Shopify's proxy signature first.
@@ -30,7 +29,7 @@ Use this guide when you have your own Shopify app or backend that needs a store'
 
 ## Backend example (Node.js + Express)
 
-This endpoint is exposed to the storefront through a [Shopify app proxy](https://shopify.dev/docs/apps/build/online-store/app-proxies). It forwards the product and buyer to [Get specific product campaigns](/campaigns/get-specific-product-campaigns) and returns the campaigns that apply.
+This endpoint is exposed to the storefront through a [Shopify app proxy](https://shopify.dev/docs/apps/build/online-store/app-proxies). It forwards the product and buyer to [Get campaigns for a specific product](/campaigns/get-campaigns-for-a-specific-product) and returns the campaigns that apply.
 
 ```javascript server/campaigns.js
 import express from "express";
@@ -126,9 +125,13 @@ On a product page, your theme app extension already has every value the API need
       body: JSON.stringify(payload),
     });
     const { campaigns } = await response.json();
-    const campaign = campaigns.find((c) => c.type === "VOLUME_DISCOUNT");
-    if (campaign) {
-      // render campaign.tiers into #dealeasy-campaigns
+    for (const campaign of campaigns) {
+      if (campaign.type === "VOLUME_DISCOUNT") {
+        // render campaign.tiers as quantity tiers into #dealeasy-campaigns
+      } else if (campaign.type === "BOGO_DISCOUNT") {
+        // render "Buy {buyQuantity}, get {getQuantity} free" for each tier
+      }
+      // skip any other type
     }
   })();
 </script>
@@ -152,8 +155,9 @@ A `200` response with `"campaigns": []` means the key works, but no campaign app
 
 ## Using the data
 
-- **Next-tier nudges:** compare the cart quantity with `tiers` to show "Add 2 more to save 15%". Use `quantityScope` to decide whether to count per product, per variant, or across all products.
-- **Syncing to other systems:** use [List product campaigns](/campaigns/list-product-campaigns). Store the campaign `id`, not the tier `id`, because tier IDs are positional.
+- **Volume discount nudges:** compare the cart quantity with `tiers` to show "Add 2 more to save 15%". Use `quantityScope` to decide whether to count per product, per variant, or across all products. See [Volume discount](/campaigns/volume-discount).
+- **BOGO nudges:** use `buyQuantity` and `getQuantity` to show "Add 1 more to get it free". See [BOGO](/campaigns/bogo).
+- **Stable references:** store the campaign `id`, not the tier `id`, because tier IDs are positional.
 - **Code campaigns:** when `method` is `CODE`, show or apply `code`. `AUTOMATIC` campaigns need no action.
 
 ## Operational checklist
